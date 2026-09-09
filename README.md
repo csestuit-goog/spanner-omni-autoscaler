@@ -210,17 +210,73 @@ Conforms to **[Use Prometheus alerts to monitor Spanner Omni](https://cloud.goog
 
 ---
 
-## 📈 Integrated Grafana Dashboard
+## 📈 Integrated Observability Stack (Optional Prometheus & Grafana)
 
-Conforms to **[Use Grafana dashboards to monitor Spanner Omni](https://cloud.google.com/spanner-omni/grafana-dashboards)**.
+Conforms to:
+- **[Use Prometheus alerts to monitor Spanner Omni](https://cloud.google.com/spanner-omni/prometheus-alerts)**
+- **[Use Grafana dashboards to monitor Spanner Omni](https://cloud.google.com/spanner-omni/grafana-dashboards)**
+
+### When to Use:
+- **Customer ALREADY has Prometheus / Grafana**: The chart provisions the Dashboard ConfigMap with label `grafana_dashboard: "1"`, allowing existing Grafana sidecars to discover it automatically.
+- **Customer DOES NOT have Prometheus / Grafana**: Enable the built-in, integrated observability stack in Helm or Terraform. The chart deploys a dedicated Prometheus server with official Spanner Omni alert rules and a pre-provisioned Grafana server.
+
+### Enabling Integrated Prometheus & Grafana via Helm:
+
+Add the `monitoring` block to your values:
+
+```yaml
+monitoring:
+  namespace: "monitoring" # Target namespace for Prometheus & Grafana
+
+  prometheus:
+    enabled: true
+    retention: "15d"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+
+  grafana:
+    enabled: true
+    serviceType: ClusterIP # Change to NodePort or LoadBalancer for external UI access
+    adminUser: "admin"
+    adminPassword: "spanneradmin"
+    resources:
+      requests:
+        cpu: "250m"
+        memory: 512Mi
+```
+
+Deploy with integrated monitoring:
+```bash
+helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
+  -f my-spanner-values.yaml \
+  --set monitoring.prometheus.enabled=true \
+  --set monitoring.grafana.enabled=true \
+  -n spanner-autoscaler --create-namespace
+```
+
+### Enabling via Terraform:
+
+```hcl
+module "spanner_omni_autoscaler" {
+  source = "./terraform/modules/autoscaler"
+
+  deploy_prometheus = true
+  deploy_grafana    = true
+  grafana_namespace = "monitoring"
+  ...
+}
+```
 
 The bundled dashboard ([`grafana/dashboards/spanner-omni-autoscaler-dashboard.json`](grafana/dashboards/spanner-omni-autoscaler-dashboard.json)) includes:
 - **TrueTime Circuit Breakers**: Status indicators for TrueTime availability, clock SLA violations, and microsecond drift.
 - **CPU & Storage Thresholds**: Visual lines at 65% (CPU target), 80% (Storage Warning), and 90% (Storage Critical).
 - **Replica Topologies**: Real-time current vs. desired StatefulSet replica counts.
 - **Tablet Partitions & Range Movement**: Split, move, and merge rates across nodes.
-
-Automatically provisioned as a Kubernetes ConfigMap for instant discovery by Grafana sidecars.
 
 ---
 

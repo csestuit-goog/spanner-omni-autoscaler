@@ -44,6 +44,15 @@ locals {
       enabled   = var.enable_grafana_dashboard
       namespace = var.grafana_namespace
     }
+    monitoring = {
+      namespace = var.grafana_namespace
+      prometheus = {
+        enabled = var.deploy_prometheus
+      }
+      grafana = {
+        enabled = var.deploy_grafana
+      }
+    }
   }, var.custom_values)
 }
 

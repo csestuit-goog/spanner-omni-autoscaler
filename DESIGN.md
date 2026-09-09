@@ -105,6 +105,16 @@ Adapted from [Deploy the Autoscaler tool to GKE](https://cloud.google.com/spanne
 1. **Unified Model (Recommended)**: Poller and Scaler run inside a single Pod triggered by a Kubernetes **CronJob** (`*/2 * * * *`). Eliminates idle compute/memory overhead.
 2. **Decoupled Controller Model**: Runs as a continuous controller watching `SpannerOmniAutoscaler` Custom Resources.
 
+### Pillar 6: Optional Integrated Observability Stack (Self-Contained Deployment)
+For environments where the customer does **not** have an existing Prometheus or Grafana instance in their Kubernetes cluster:
+- **Integrated Prometheus Server**:
+  - Automatically configured with official [Spanner Omni Prometheus Alert Rules](https://cloud.google.com/spanner-omni/prometheus-alerts) (`TrueTimeUnavailable`, `ClockSlaViolation`, `SpannerHighCPUUtilization`, `SpannerStorageUtilizationCritical`).
+  - Scrapes metrics targets dynamically from Spanner Omni via `http_sd_configs` at port `15012`.
+- **Integrated Grafana Server**:
+  - Automatically provisions data source pointing to the Prometheus instance.
+  - Automatically provisions the full [Spanner Omni Autoscaler Dashboard](https://cloud.google.com/spanner-omni/grafana-dashboards) in folder `Spanner Omni`.
+  - Zero-touch bootstrap: Ready to view immediately upon Helm install or Terraform apply.
+
 --------------------------------------------------------------------------------
 
 ## 4. Security & Compliance Design
@@ -121,3 +131,4 @@ Adapted from [Deploy the Autoscaler tool to GKE](https://cloud.google.com/spanne
 3. **Zero Secret Exposure**:
    - Relies on in-cluster Kubernetes ServiceAccount token auto-mounting.
    - Internal mTLS/TLS verification supported for Spanner endpoints and Prometheus servers.
+

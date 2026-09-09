@@ -96,8 +96,21 @@ variable "grafana_namespace" {
   default     = "monitoring"
 }
 
+variable "deploy_prometheus" {
+  type        = bool
+  description = "Deploy integrated Prometheus server with official Spanner Omni alert rules if cluster lacks one"
+  default     = false
+}
+
+variable "deploy_grafana" {
+  type        = bool
+  description = "Deploy integrated Grafana server with pre-configured Spanner Omni dashboards if cluster lacks one"
+  default     = false
+}
+
 variable "custom_values" {
   type        = any
   description = "Additional custom values to merge into Helm release"
   default     = {}
 }
+

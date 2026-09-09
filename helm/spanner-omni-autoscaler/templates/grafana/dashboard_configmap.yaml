@@ -1,9 +1,9 @@
-{{- if .Values.grafana.enabled -}}
+{{- if or .Values.grafana.enabled .Values.monitoring.grafana.enabled -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Release.Name }}-grafana-dashboard
-  namespace: {{ .Values.grafana.namespace | default .Release.Namespace }}
+  name: {{ .Release.Name }}-autoscaler-dashboard
+  namespace: {{ .Values.monitoring.namespace | default .Values.grafana.namespace | default .Release.Namespace }}
   labels:
     app.kubernetes.io/name: spanner-omni-autoscaler
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -15,3 +15,4 @@ data:
   spanner-omni-autoscaler.json: |
 {{ .Files.Get "grafana/dashboards/spanner-omni-autoscaler-dashboard.json" | indent 4 }}
 {{- end }}
+

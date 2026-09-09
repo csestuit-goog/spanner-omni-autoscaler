@@ -14,6 +14,9 @@ spannerOmni:
   # Usually "spanner-service:15000" or internal LoadBalancer IP / DNS
   deploymentEndpoint: "spanner-service:15000"
 
+  # Metrics target scrape endpoint exposed by Spanner Omni (default port 15012)
+  metricsTargetEndpoint: "spanner.spanner-ns.svc.cluster.local:15012"
+
   # Prometheus Agent or Server endpoint reachable within the cluster
   # Default Prometheus service deployed alongside Spanner Omni
   prometheusAddress: "http://prometheus-service.monitoring.svc.cluster.local:9090"
@@ -107,3 +110,46 @@ grafana:
   namespace: "monitoring"
   extraLabels:
     grafana_dashboard: "1"
+
+# ==============================================================================
+# Optional Integrated Observability Stack (Prometheus & Grafana)
+# Enable if the customer cluster does NOT already have Prometheus or Grafana.
+# Includes official Spanner Omni Prometheus Alert Rules and Pre-provisioned Grafana.
+# ==============================================================================
+monitoring:
+  namespace: "monitoring"
+
+  prometheus:
+    # Set to true to deploy a dedicated Prometheus Server with official Spanner Omni rules
+    enabled: false
+    image:
+      repository: prom/prometheus
+      tag: "v3.0.1"
+      pullPolicy: IfNotPresent
+    retention: "15d"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+
+  grafana:
+    # Set to true to deploy an integrated Grafana Server with pre-provisioned Spanner Omni dashboards
+    enabled: false
+    image:
+      repository: grafana/grafana
+      tag: "11.4.0"
+      pullPolicy: IfNotPresent
+    serviceType: ClusterIP # or NodePort / LoadBalancer
+    adminUser: "admin"
+    adminPassword: "spanneradmin"
+    resources:
+      requests:
+        cpu: "250m"
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+
