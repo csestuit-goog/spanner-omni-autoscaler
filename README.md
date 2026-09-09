@@ -114,27 +114,45 @@ spanner-omni-autoscaler/
 Launch the interactive CLI runner:
 
 ```bash
-chmod +x ./quickstart.sh
+chmod +x ./quickstart.sh ./reconfigure.sh
 ./quickstart.sh
 ```
 
 Features available directly in the interactive menu:
-1. Deploy Autoscaler via Helm (Unified Model).
-2. Deploy Autoscaler via Terraform (GKE / EKS / AKS).
-3. Check Autoscaler CronJob & StatefulSet Status.
-4. Launch Port-Forward to Grafana (:3000).
-5. Run Local Unit Test Suite.
+1. **Auto-Discover & Reconfigure for Existing Cluster**: Automatically scans your Kubernetes cluster, discovers Spanner Omni StatefulSets, zones, and Prometheus endpoints, and generates a ready-to-deploy values file.
+2. **Deploy Autoscaler via Helm (Unified Model)**.
+3. **Deploy Autoscaler via Terraform (GKE / EKS / AKS)**.
+4. **Check Autoscaler CronJob & StatefulSet Status**.
+5. **Launch Port-Forward to Grafana (:3000)**.
+6. **Run Local Unit Test Suite**.
 
 ---
 
-## ⚙️ Easy Configuration (Point to Your Instance)
+## ⚙️ Easily Pointing to Any Existing Spanner Omni Cluster
+
+### Method 1: Automatic Discovery & Reconfiguration (Recommended)
+
+Run the included cluster reconfigurator:
+
+```bash
+./reconfigure.sh [output-values.yaml]
+```
+
+This utility:
+- Automatically detects the active `kubectl` context.
+- Discovers all Spanner Omni StatefulSets (`spanner-a`, `spanner-b`, `spanner-c`, etc.) across any namespace.
+- Resolves topology zones (`europe-west4-a`, `us-central1-a`, etc.) from pod templates and node selectors.
+- Auto-detects in-cluster Prometheus and Spanner service endpoints (`spanner.spanner-ns.svc.cluster.local:15000`).
+- Prompts for confirmation/overrides and outputs a tailored values file (`spanner-omni-cluster.values.yaml`).
+
+### Method 2: Manual Values File Customization
 
 Customize [`my-spanner-values.yaml`](my-spanner-values.yaml) to point to your Spanner Omni instance:
 
 ```yaml
 spannerOmni:
   namespace: "spanner-ns"
-  deploymentEndpoint: "spanner-service:15000"
+  deploymentEndpoint: "spanner.spanner-ns.svc.cluster.local:15000"
   prometheusAddress: "http://prometheus-service.monitoring.svc.cluster.local:9090"
   rootServersPerZone: 3
   safeScaleDown: true
@@ -142,22 +160,24 @@ spannerOmni:
 targets:
   - name: "spanner-a"
     minReplicas: 3
-    maxReplicas: 15
+    maxReplicas: 10
     cpuTargetPercent: 65
     storageTargetPercent: 80
 
   - name: "spanner-b"
     minReplicas: 3
-    maxReplicas: 15
+    maxReplicas: 10
     cpuTargetPercent: 65
     storageTargetPercent: 80
 ```
 
-Deploy with your values:
+Deploy or update the autoscaler pointing to your cluster:
 ```bash
 helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
   -f my-spanner-values.yaml \
   --namespace spanner-autoscaler \
+  --create-namespace
+```
   --create-namespace
 ```
 

@@ -43,22 +43,24 @@ check_prerequisites() {
 
 show_menu() {
   echo -e "\n${BOLD}Select an action:${NC}"
-  echo "  1) Deploy Autoscaler via Helm (Unified CronJob Model)"
-  echo "  2) Deploy Autoscaler via Terraform (GKE / EKS / AKS)"
-  echo "  3) Check Autoscaler Status & Pod Logs"
-  echo "  4) Forward Grafana Dashboard (:3000)"
-  echo "  5) Run Local Unit Tests"
-  echo "  6) Exit"
+  echo "  1) Auto-Discover & Reconfigure for Existing Cluster"
+  echo "  2) Deploy Autoscaler via Helm (Unified CronJob Model)"
+  echo "  3) Deploy Autoscaler via Terraform (GKE / EKS / AKS)"
+  echo "  4) Check Autoscaler Status & Pod Logs"
+  echo "  5) Forward Grafana Dashboard (:3000)"
+  echo "  6) Run Local Unit Tests"
+  echo "  7) Exit"
   echo ""
-  read -rp "Enter choice [1-6]: " choice
+  read -rp "Enter choice [1-7]: " choice
 
   case "$choice" in
-    1) deploy_helm ;;
-    2) deploy_terraform ;;
-    3) check_status ;;
-    4) forward_grafana ;;
-    5) run_tests ;;
-    6) exit 0 ;;
+    1) ./reconfigure.sh ;;
+    2) deploy_helm ;;
+    3) deploy_terraform ;;
+    4) check_status ;;
+    5) forward_grafana ;;
+    6) run_tests ;;
+    7) exit 0 ;;
     *) log_error "Invalid option."; show_menu ;;
   esac
 }
