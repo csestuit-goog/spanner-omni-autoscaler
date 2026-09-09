@@ -1,0 +1,8 @@
+apiVersion: v2
+name: spanner-omni-autoscaler
+description: A Kubernetes-native Custom Controller and Helm Chart for autoscaling Spanner Omni StatefulSets across GKE, EKS, and AKS.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: Google Cloud Spanner Omni Team

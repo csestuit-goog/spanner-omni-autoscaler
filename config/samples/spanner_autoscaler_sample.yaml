@@ -1,0 +1,43 @@
+apiVersion: autoscaling.spanner.google.com/v1alpha1
+kind: SpannerOmniAutoscaler
+metadata:
+  name: spanner-omni-autoscaler-zone-a
+  namespace: spanner-ns
+spec:
+  # Target StatefulSet deployed by Spanner Omni Helm chart
+  targetRef:
+    name: spanner-a
+    namespace: spanner-ns
+
+  # Capacity bounds
+  # Notice: Root servers per zone = 3, so non-root horizontal scale ranges between 3 and 15
+  minReplicas: 3
+  maxReplicas: 15
+
+  # Metrics evaluated via Prometheus
+  metrics:
+    - type: CPUUtilization
+      averageUtilization: 65
+    - type: StorageUtilization
+      averageUtilization: 80
+
+  # Dampening to prevent flushes and oscillations
+  behavior:
+    scaleUp:
+      cooldownSeconds: 120
+      maxStepReplicas: 2
+    scaleDown:
+      cooldownSeconds: 300
+      maxStepReplicas: 1
+
+  # Prometheus Agent / Server connection (in-cluster DNS)
+  prometheus:
+    address: "http://prometheus-service.monitoring.svc.cluster.local:9090"
+    evaluationIntervalSeconds: 30
+    timeoutSeconds: 10
+
+  # Spanner Omni Admin integration for safe partition drain before K8s replica patch
+  spannerOmniAdmin:
+    deploymentEndpoint: "spanner-service:15000"
+    safeScaleDown: true
+    rootServersPerZone: 3

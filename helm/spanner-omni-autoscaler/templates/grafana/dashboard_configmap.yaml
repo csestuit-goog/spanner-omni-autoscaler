@@ -1,0 +1,17 @@
+{{- if .Values.grafana.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-dashboard
+  namespace: {{ .Values.grafana.namespace | default .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: spanner-omni-autoscaler
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    grafana_dashboard: "1"
+    {{- with .Values.grafana.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  spanner-omni-autoscaler.json: |
+{{ .Files.Get "grafana/dashboards/spanner-omni-autoscaler-dashboard.json" | indent 4 }}
+{{- end }}

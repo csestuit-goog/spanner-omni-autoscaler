@@ -1,0 +1,109 @@
+# ==============================================================================
+# Spanner Omni Autoscaler Configuration
+# ==============================================================================
+
+# Global target Spanner Omni cluster connection & defaults
+spannerOmni:
+  # Kubernetes namespace where Spanner Omni StatefulSets live
+  namespace: "spanner-ns"
+
+  # Base release name of Spanner Omni deployment (e.g. "spanner-omni")
+  releaseName: "spanner-omni"
+
+  # Management gRPC/CLI endpoint (format: "<service-name>:<port>")
+  # Usually "spanner-service:15000" or internal LoadBalancer IP / DNS
+  deploymentEndpoint: "spanner-service:15000"
+
+  # Prometheus Agent or Server endpoint reachable within the cluster
+  # Default Prometheus service deployed alongside Spanner Omni
+  prometheusAddress: "http://prometheus-service.monitoring.svc.cluster.local:9090"
+
+  # Number of root servers per zone in this cluster topology.
+  # Root servers maintain Raft/Paxos quorum and MUST NEVER be scaled down.
+  rootServersPerZone: 3
+
+  # Safe scale-down: When scaling in, decommission the server via Spanner Omni CLI
+  # to drain and relocate tablet splits before reducing StatefulSet replica count.
+  safeScaleDown: true
+
+# ------------------------------------------------------------------------------
+# Target StatefulSets to Autoscale
+# Each entry targets a specific zone or StatefulSet in the Spanner Omni deployment.
+# ------------------------------------------------------------------------------
+targets:
+  - # StatefulSet name (e.g. "spanner-a", "spanner-b", "spanner-east-1")
+    name: "spanner-a"
+    # Override namespace if different from spannerOmni.namespace
+    namespace: ""
+    # Scaling boundaries (minReplicas must be >= rootServersPerZone)
+    minReplicas: 3
+    maxReplicas: 10
+    # Thresholds
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+    # Optional per-target endpoint overrides
+    deploymentEndpoint: ""
+    prometheusAddress: ""
+
+  # Example multi-zone target:
+  # - name: "spanner-b"
+  #   minReplicas: 3
+  #   maxReplicas: 10
+  #   cpuTargetPercent: 65
+  #   storageTargetPercent: 80
+
+# ==============================================================================
+# Deployment Topologies (Adapted from Google Cloud Spanner GKE Autoscaler Guide)
+# ==============================================================================
+
+# Model 1: Unified CronJob Model (Recommended)
+# Periodically spins up a lightweight Pod to poll Prometheus and reconcile replicas.
+unifiedModel:
+  enabled: true
+  schedule: "*/2 * * * *" # Every 2 minutes
+  configMapName: "autoscaler-config"
+
+# Model 2: Custom Controller / Operator Model (Decoupled Long-Running Pod)
+# Runs continuously in the background and watches SpannerOmniAutoscaler CRDs.
+customController:
+  enabled: false
+  syncPeriod: "30s"
+
+# ------------------------------------------------------------------------------
+# Container & Infrastructure Settings
+# ------------------------------------------------------------------------------
+image:
+  repository: gcr.io/spanner-omni/spanner-omni-autoscaler
+  pullPolicy: IfNotPresent
+  tag: "v0.1.0"
+
+serviceAccount:
+  create: true
+  name: "spanner-omni-autoscaler"
+  annotations: {}
+
+rbac:
+  create: true
+
+controller:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ------------------------------------------------------------------------------
+# Grafana Dashboard Integration (https://docs.cloud.google.com/spanner-omni/grafana-dashboards)
+# Automatically provisions ConfigMap for Grafana dashboard sidecar discovery
+# ------------------------------------------------------------------------------
+grafana:
+  enabled: true
+  namespace: "monitoring"
+  extraLabels:
+    grafana_dashboard: "1"

@@ -1,0 +1,45 @@
+{{- if .Values.unifiedModel.enabled -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-unified-autoscaler
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: spanner-omni-autoscaler
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    topology: unified
+spec:
+  schedule: {{ .Values.unifiedModel.schedule | default "*/2 * * * *" | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: spanner-omni-autoscaler
+            app.kubernetes.io/instance: {{ .Release.Name }}
+        spec:
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          restartPolicy: OnFailure
+          containers:
+            - name: poller-scaler
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - /manager
+              args:
+                - --mode=unified
+                - --config=/etc/autoscaler/autoscaler-config.yaml
+              resources:
+                {{- toYaml .Values.controller.resources | nindent 16 }}
+              volumeMounts:
+                - name: config-volume
+                  mountPath: /etc/autoscaler
+                  readOnly: true
+          volumes:
+            - name: config-volume
+              configMap:
+                name: {{ .Values.unifiedModel.configMapName | default "autoscaler-config" }}
+{{- end }}
