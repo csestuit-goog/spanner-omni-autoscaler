@@ -21,7 +21,7 @@ type ServerInfo struct {
 // AdminClient defines operations to manage Spanner Omni cluster nodes.
 type AdminClient interface {
 	ListServers(ctx context.Context, zone, endpoint string) ([]ServerInfo, error)
-	DecommissionServer(ctx context.Context, zone, serverName, endpoint string) error
+	DecommissionServer(ctx context.Context, zone, serverName, endpoint, namespace string) error
 	DrainAndDecommissionHighestIndex(ctx context.Context, zone, statefulSetName, namespace, endpoint string, targetReplicaCount int32) error
 }
 
@@ -37,6 +37,7 @@ func NewAdminClient() AdminClient {
 }
 
 // ListServers calls 'spanner deployment servers list'
+// Tries local binary first; falls back to 'kubectl exec' into root pod if local binary not in container.
 func (c *adminClient) ListServers(ctx context.Context, zone, endpoint string) ([]ServerInfo, error) {
 	args := []string{"deployment", "servers", "list"}
 	if zone != "" {
@@ -48,15 +49,39 @@ func (c *adminClient) ListServers(ctx context.Context, zone, endpoint string) ([
 
 	cmd := exec.CommandContext(ctx, c.cliPath, args...)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("list servers failed: %w (output: %s)", err, string(out))
+	if err == nil {
+		return parseServerList(string(out)), nil
 	}
 
-	return parseServerList(string(out)), nil
+	// Fallback via kubectl exec into spanner-a-0 (matching spanner-omni-demo-regional operations)
+	k8sArgs := []string{
+		"exec", "spanner-a-0", "-n", "spanner-ns", "-c", "spanner", "--",
+		"/google/spanner/bin/spanner", "deployment", "servers", "list",
+	}
+	if zone != "" {
+		k8sArgs = append(k8sArgs, fmt.Sprintf("--zone=%s", zone))
+	}
+	if endpoint != "" {
+		k8sArgs = append(k8sArgs, fmt.Sprintf("--deployment-endpoint=%s", endpoint))
+	} else {
+		k8sArgs = append(k8sArgs, "--deployment-endpoint=dns:///spanner:15000")
+	}
+
+	kCmd := exec.CommandContext(ctx, "kubectl", k8sArgs...)
+	kOut, kErr := kCmd.CombinedOutput()
+	if kErr != nil {
+		return nil, fmt.Errorf("list servers failed locally (%v) and via kubectl exec (%v: %s)", err, kErr, string(kOut))
+	}
+
+	return parseServerList(string(kOut)), nil
 }
 
 // DecommissionServer instructs Spanner Omni to drain data and remove server from cluster
-func (c *adminClient) DecommissionServer(ctx context.Context, zone, serverName, endpoint string) error {
+func (c *adminClient) DecommissionServer(ctx context.Context, zone, serverName, endpoint, namespace string) error {
+	if namespace == "" {
+		namespace = "spanner-ns"
+	}
+
 	args := []string{"deployment", "servers", "delete", serverName}
 	if zone != "" {
 		args = append(args, fmt.Sprintf("--zone=%s", zone))
@@ -65,14 +90,36 @@ func (c *adminClient) DecommissionServer(ctx context.Context, zone, serverName, 
 		args = append(args, fmt.Sprintf("--deployment-endpoint=%s", endpoint))
 	}
 
-	log.Printf("[Spanner Admin] Executing server decommission: %s %v", c.cliPath, args)
+	log.Printf("[Spanner Admin] Attempting direct server decommission: %s %v", c.cliPath, args)
 	cmd := exec.CommandContext(ctx, c.cliPath, args...)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("decommission server %s failed: %w (output: %s)", serverName, err, string(out))
+	if err == nil {
+		log.Printf("[Spanner Admin] Server %s decommission response: %s", serverName, string(out))
+		return nil
 	}
 
-	log.Printf("[Spanner Admin] Server %s decommission response: %s", serverName, string(out))
+	// Robust in-cluster fallback via kubectl exec into root pod spanner-a-0
+	log.Printf("[Spanner Admin] Direct CLI failed (%v). Falling back to kubectl exec into %s/spanner-a-0...", err, namespace)
+	k8sArgs := []string{
+		"exec", "spanner-a-0", "-n", namespace, "-c", "spanner", "--",
+		"/google/spanner/bin/spanner", "deployment", "servers", "delete", serverName,
+	}
+	if zone != "" {
+		k8sArgs = append(k8sArgs, fmt.Sprintf("--zone=%s", zone))
+	}
+	if endpoint != "" {
+		k8sArgs = append(k8sArgs, fmt.Sprintf("--deployment-endpoint=%s", endpoint))
+	} else {
+		k8sArgs = append(k8sArgs, "--deployment-endpoint=dns:///spanner:15000")
+	}
+
+	kCmd := exec.CommandContext(ctx, "kubectl", k8sArgs...)
+	kOut, kErr := kCmd.CombinedOutput()
+	if kErr != nil {
+		return fmt.Errorf("decommission server %s failed: %w (output: %s)", serverName, kErr, string(kOut))
+	}
+
+	log.Printf("[Spanner Admin] Server %s decommission via kubectl exec succeeded: %s", serverName, string(kOut))
 	return nil
 }
 
@@ -84,26 +131,23 @@ func (c *adminClient) DrainAndDecommissionHighestIndex(
 ) error {
 	servers, err := c.ListServers(ctx, zone, endpoint)
 	if err != nil {
-		log.Printf("[Spanner Admin] Warning: could not list servers via CLI: %v. Proceeding with K8s patch.", err)
+		log.Printf("[Spanner Admin] Warning: could not list servers via CLI or pod exec: %v. Proceeding with K8s patch.", err)
 		return nil
 	}
 
-	// Example server name in docs: zones/us-central1-a/servers/spanner-a-1.pod.spanner-ns:15000
+	// Example server name in regional GKE demo: zones/europe-west4-a/servers/spanner-a-4.pod.spanner-ns:15000
 	for _, s := range servers {
 		if s.IsRoot {
 			continue // Root servers must never be decommissioned
 		}
-		// Match statefulset name in server host
 		if strings.Contains(s.Host, statefulSetName) {
-			// Extract pod index
 			var podIndex int32
 			_, scanErr := fmt.Sscanf(s.Host, statefulSetName+"-%d.", &podIndex)
 			if scanErr == nil && podIndex >= targetReplicaCount {
 				log.Printf("[Spanner Admin] Draining and decommissioning candidate server %s (index %d >= target %d)", s.Name, podIndex, targetReplicaCount)
-				if err := c.DecommissionServer(ctx, zone, s.Name, endpoint); err != nil {
+				if err := c.DecommissionServer(ctx, zone, s.Name, endpoint, namespace); err != nil {
 					return fmt.Errorf("failed decommissioning %s: %w", s.Name, err)
 				}
-				// Allow brief rebalance period
 				time.Sleep(3 * time.Second)
 			}
 		}

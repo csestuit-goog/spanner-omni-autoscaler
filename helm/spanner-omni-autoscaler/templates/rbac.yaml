@@ -29,7 +29,7 @@ rules:
       - watch
       - update
       - patch
-  # Permissions to inspect pods and events
+  # Permissions to inspect pods and execute safe decommission CLI commands
   - apiGroups:
       - ""
     resources:
@@ -40,6 +40,14 @@ rules:
       - get
       - list
       - watch
+  # Required to execute /google/spanner/bin/spanner inside pod during safe scale down
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - create
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

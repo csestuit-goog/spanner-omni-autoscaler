@@ -11,7 +11,6 @@ import (
 	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/pkg/scaler"
 	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/pkg/spanner"
 
-	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -55,7 +54,7 @@ func (r *Reconciler) ReconcileAutoscaler(ctx context.Context, as *v1alpha1.Spann
 	}
 	as.Status.CurrentReplicas = currentReplicas
 
-	// 2. Query Prometheus for metrics
+	// 2. Query Prometheus for metrics & active alerts
 	promClient := prometheus.NewClient(as.Spec.Prometheus.Address, 10*time.Second)
 	metricValues := make(map[string]float64)
 	metricStrings := make(map[string]string)
@@ -97,8 +96,34 @@ func (r *Reconciler) ReconcileAutoscaler(ctx context.Context, as *v1alpha1.Spann
 	}
 	as.Status.CurrentMetrics = metricStrings
 
-	// 3. Evaluate scaling decision
-	decision := r.evaluator.Evaluate(&as.Spec, &as.Status, currentReplicas, metricValues, time.Now())
+	// Retrieve Spanner Omni Prometheus Alerts (TrueTime, Storage Critical, etc.)
+	var alertInputs *scaler.AlertInputs
+	spannerAlerts, err := promClient.GetSpannerAlerts(ctx, targetNamespace, targetName)
+	if err != nil {
+		log.Printf("[Autoscaler %s/%s] Warning: unable to fetch Prometheus alerts: %v", as.Namespace, as.Name, err)
+	} else if spannerAlerts != nil {
+		alertInputs = &scaler.AlertInputs{
+			TrueTimeUnavailable:        spannerAlerts.TrueTimeUnavailable,
+			ClockSlaViolation:          spannerAlerts.ClockSlaViolation,
+			SpannerHighCPUUtilization:  spannerAlerts.HighCPUUtilization,
+			StorageUtilizationWarning:  spannerAlerts.StorageUtilizationWarning,
+			StorageUtilizationCritical: spannerAlerts.StorageUtilizationCritical,
+			StoragePerVCPUTooHigh:      spannerAlerts.StoragePerVCPUTooHigh,
+		}
+	}
+
+	// 3. Map CRD to internal scaler Spec & Status
+	scalerSpec := mapCRDSpecToScalerSpec(&as.Spec)
+	scalerStatus := &scaler.Status{
+		CurrentReplicas: as.Status.CurrentReplicas,
+		DesiredReplicas: as.Status.DesiredReplicas,
+	}
+	if as.Status.LastScaleTime != nil {
+		scalerStatus.LastScaleTime = &as.Status.LastScaleTime.Time
+	}
+
+	// 4. Evaluate scaling decision
+	decision := r.evaluator.Evaluate(scalerSpec, scalerStatus, currentReplicas, metricValues, alertInputs, time.Now())
 	as.Status.DesiredReplicas = decision.TargetReplicas
 
 	log.Printf("[Autoscaler %s/%s] Evaluator Decision: Action=%s, Current=%d, Desired=%d, Reason=%s",
@@ -149,4 +174,56 @@ func (r *Reconciler) ReconcileAutoscaler(ctx context.Context, as *v1alpha1.Spann
 	}
 
 	return nil
+}
+
+func mapCRDSpecToScalerSpec(spec *v1alpha1.SpannerOmniAutoscalerSpec) *scaler.Spec {
+	if spec == nil {
+		return nil
+	}
+
+	scalerSpec := &scaler.Spec{
+		TargetRef: scaler.TargetRef{
+			Name:      spec.TargetRef.Name,
+			Namespace: spec.TargetRef.Namespace,
+		},
+		MinReplicas: spec.MinReplicas,
+		MaxReplicas: spec.MaxReplicas,
+	}
+
+	for _, m := range spec.Metrics {
+		scalerSpec.Metrics = append(scalerSpec.Metrics, scaler.MetricTarget{
+			Type:               scaler.MetricType(m.Type),
+			AverageUtilization: m.AverageUtilization,
+			CustomPromQL:       m.CustomPromQL,
+			Threshold:          m.Threshold,
+		})
+	}
+
+	if spec.Behavior != nil {
+		scalerSpec.Behavior = &scaler.ScalingBehavior{}
+		if spec.Behavior.ScaleUp != nil {
+			scalerSpec.Behavior.ScaleUp = &scaler.ScalingPolicy{
+				StabilizationWindowSeconds: spec.Behavior.ScaleUp.StabilizationWindowSeconds,
+				MaxStepReplicas:            spec.Behavior.ScaleUp.MaxStepReplicas,
+				CooldownSeconds:            spec.Behavior.ScaleUp.CooldownSeconds,
+			}
+		}
+		if spec.Behavior.ScaleDown != nil {
+			scalerSpec.Behavior.ScaleDown = &scaler.ScalingPolicy{
+				StabilizationWindowSeconds: spec.Behavior.ScaleDown.StabilizationWindowSeconds,
+				MaxStepReplicas:            spec.Behavior.ScaleDown.MaxStepReplicas,
+				CooldownSeconds:            spec.Behavior.ScaleDown.CooldownSeconds,
+			}
+		}
+	}
+
+	if spec.SpannerOmniAdmin != nil {
+		scalerSpec.SpannerOmniAdmin = &scaler.SpannerOmniAdminConfig{
+			DeploymentEndpoint: spec.SpannerOmniAdmin.DeploymentEndpoint,
+			SafeScaleDown:      spec.SpannerOmniAdmin.SafeScaleDown,
+			RootServersPerZone: spec.SpannerOmniAdmin.RootServersPerZone,
+		}
+	}
+
+	return scalerSpec
 }

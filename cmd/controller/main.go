@@ -13,6 +13,7 @@ import (
 	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/pkg/controller"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -95,7 +96,7 @@ func runReconciliationLoop(ctx context.Context, dynamicClient dynamic.Interface,
 	}
 }
 
-func parseUnstructuredAutoscaler(u *metav1.Unstructured) *v1alpha1.SpannerOmniAutoscaler {
+func parseUnstructuredAutoscaler(u *unstructured.Unstructured) *v1alpha1.SpannerOmniAutoscaler {
 	as := &v1alpha1.SpannerOmniAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      u.GetName(),
