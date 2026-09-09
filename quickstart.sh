@@ -66,9 +66,28 @@ show_menu() {
 }
 
 deploy_helm() {
-  log_info "Deploying Spanner Omni Autoscaler via Helm..."
+  echo -e "\nSelect cloud platform target for Helm values:"
+  echo "  1) Google Kubernetes Engine (GKE) [default]"
+  echo "  2) Amazon Elastic Kubernetes Service (AWS EKS)"
+  echo "  3) Azure Kubernetes Service (Azure AKS)"
+  echo "  4) Custom values file"
+  read -rp "Enter choice [1-4]: " hchoice
+  
+  VALUES_FILE="helm-values-examples/values-gke-regional.yaml"
+  case "$hchoice" in
+    1) VALUES_FILE="helm-values-examples/values-gke-regional.yaml" ;;
+    2) VALUES_FILE="helm-values-examples/values-aws-eks.yaml" ;;
+    3) VALUES_FILE="helm-values-examples/values-azure-aks.yaml" ;;
+    4) 
+      read -rp "Enter path to custom values file: " custom_val
+      VALUES_FILE="${custom_val}"
+      ;;
+    *) log_info "Using default GKE values." ;;
+  esac
+
+  log_info "Deploying Spanner Omni Autoscaler via Helm using ${VALUES_FILE}..."
   helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
-    -f my-spanner-values.yaml \
+    -f "${VALUES_FILE}" \
     --namespace spanner-autoscaler \
     --create-namespace
   log_success "Helm release installed. Checking resources..."

@@ -1,0 +1,54 @@
+# ==============================================================================
+# Spanner Omni Autoscaler - Azure AKS (Azure Kubernetes Service) Values
+# ==============================================================================
+spannerOmni:
+  namespace: "spanner-ns"
+  deploymentEndpoint: "spanner.spanner-ns.svc.cluster.local:15000"
+  
+  # Option A: In-cluster Prometheus deployed on AKS
+  prometheusAddress: "http://prometheus-service.monitoring.svc.cluster.local:9090"
+  
+  # Option B: If querying Azure Monitor managed service for Prometheus via internal reverse-proxy:
+  # prometheusAddress: "http://ama-metrics-prometheus.kube-system.svc.cluster.local:9090"
+
+  rootServersPerZone: 3
+  safeScaleDown: true
+
+# Multi-Zone Targets across Azure Availability Zones (e.g. westeurope-1, westeurope-2, westeurope-3)
+targets:
+  - name: "spanner-a" # Zone: 1
+    minReplicas: 3
+    maxReplicas: 12
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+
+  - name: "spanner-b" # Zone: 2
+    minReplicas: 3
+    maxReplicas: 12
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+
+  - name: "spanner-c" # Zone: 3
+    minReplicas: 3
+    maxReplicas: 12
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+
+unifiedModel:
+  enabled: true
+  schedule: "*/2 * * * *"
+
+# Optional: Enable integrated Prometheus and Grafana on AKS if not present
+monitoring:
+  namespace: "monitoring"
+  prometheus:
+    enabled: false # Set true to deploy integrated Prometheus on AKS
+  grafana:
+    enabled: false  # Set true to deploy integrated Grafana on AKS
+    serviceType: ClusterIP
+
+grafana:
+  enabled: true
+  namespace: "monitoring"
+  extraLabels:
+    grafana_dashboard: "1"

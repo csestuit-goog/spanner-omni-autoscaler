@@ -50,7 +50,7 @@ module "spanner_omni_autoscaler" {
   namespace         = "spanner-autoscaler"
   spanner_namespace = "spanner-ns"
 
-  spanner_deployment_endpoint = "spanner-service.spanner-ns.svc.cluster.local:15000"
+  spanner_deployment_endpoint = "spanner.spanner-ns.svc.cluster.local:15000"
   prometheus_address          = "http://prometheus-service.monitoring.svc.cluster.local:9090"
 
   root_servers_per_zone = 3
@@ -59,6 +59,11 @@ module "spanner_omni_autoscaler" {
   deployment_model = "unified"
   cronjob_schedule = "*/2 * * * *"
 
+  # Deploy integrated monitoring if EKS cluster lacks Prometheus/Grafana
+  deploy_prometheus = false
+  deploy_grafana    = false
+  grafana_namespace = "monitoring"
+
   scaling_targets = [
     {
       name                   = "spanner-a"
@@ -66,6 +71,21 @@ module "spanner_omni_autoscaler" {
       max_replicas           = 12
       cpu_target_percent     = 65
       storage_target_percent = 80
+    },
+    {
+      name                   = "spanner-b"
+      min_replicas           = 3
+      max_replicas           = 12
+      cpu_target_percent     = 65
+      storage_target_percent = 80
+    },
+    {
+      name                   = "spanner-c"
+      min_replicas           = 3
+      max_replicas           = 12
+      cpu_target_percent     = 65
+      storage_target_percent = 80
     }
   ]
 }
+

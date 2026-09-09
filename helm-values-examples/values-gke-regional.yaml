@@ -1,0 +1,46 @@
+# ==============================================================================
+# Spanner Omni Autoscaler - Google Kubernetes Engine (GKE) Values
+# ==============================================================================
+spannerOmni:
+  namespace: "spanner-ns"
+  deploymentEndpoint: "spanner.spanner-ns.svc.cluster.local:15000"
+  prometheusAddress: "http://prometheus-service.monitoring.svc.cluster.local:9090"
+  rootServersPerZone: 3
+  safeScaleDown: true
+
+# Regional 3-Zone GKE targets (europe-west4-a, europe-west4-b, europe-west4-c)
+targets:
+  - name: "spanner-a"
+    minReplicas: 3
+    maxReplicas: 10
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+
+  - name: "spanner-b"
+    minReplicas: 3
+    maxReplicas: 10
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+
+  - name: "spanner-c"
+    minReplicas: 3
+    maxReplicas: 10
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+
+unifiedModel:
+  enabled: true
+  schedule: "*/2 * * * *"
+
+monitoring:
+  namespace: "monitoring"
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+
+grafana:
+  enabled: true
+  namespace: "monitoring"
+  extraLabels:
+    grafana_dashboard: "1"

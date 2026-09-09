@@ -280,45 +280,70 @@ The bundled dashboard ([`grafana/dashboards/spanner-omni-autoscaler-dashboard.js
 
 ---
 
-## 🏗️ Terraform & Helm Deployment Guide
+---
 
-### Deploying via Terraform
+## ☁️ Multi-Cloud Deployment Guide: AWS EKS, Azure AKS & GKE
 
-Use the modular Terraform module across GKE, EKS, or AKS:
+This autoscaler runs identically on any Kubernetes platform using **Open-Standard PromQL queries** and **Kubernetes-native primitives**. Pre-configured value files are provided under [`helm-values-examples/`](helm-values-examples/):
 
-```hcl
-module "spanner_omni_autoscaler" {
-  source = "./terraform/modules/autoscaler"
+### 1. Amazon Elastic Kubernetes Service (AWS EKS)
 
-  namespace         = "spanner-autoscaler"
-  spanner_namespace = "spanner-ns"
-
-  spanner_deployment_endpoint = "spanner-service.spanner-ns.svc.cluster.local:15000"
-  prometheus_address          = "http://prometheus-service.monitoring.svc.cluster.local:9090"
-
-  root_servers_per_zone = 3
-  safe_scale_down       = true
-  deployment_model      = "unified"
-
-  scaling_targets = [
-    {
-      name                   = "spanner-a"
-      min_replicas           = 3
-      max_replicas           = 15
-      cpu_target_percent     = 65
-      storage_target_percent = 80
-    }
-  ]
-
-  enable_grafana_dashboard = true
-  grafana_namespace        = "monitoring"
-}
+#### Deploying with Helm on AWS EKS:
+```bash
+helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
+  -f ./helm-values-examples/values-aws-eks.yaml \
+  --namespace spanner-autoscaler \
+  --create-namespace
 ```
 
+#### Deploying with Terraform on AWS EKS:
 ```bash
-cd terraform/examples/gke   # or eks, aks
+cd terraform/examples/eks
 terraform init
-terraform plan
+terraform apply -var="cluster_name=my-spanner-eks-cluster"
+```
+
+> [!TIP]
+> **AWS EKS Metrics**: Works seamlessly with standard Prometheus deployed on EKS or with [Amazon Managed Service for Prometheus (AMP)](https://aws.amazon.com/prometheus/) via an in-cluster AWS Distro for OpenTelemetry (ADOT) Collector proxy.
+
+---
+
+### 2. Azure Kubernetes Service (Azure AKS)
+
+#### Deploying with Helm on Azure AKS:
+```bash
+helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
+  -f ./helm-values-examples/values-azure-aks.yaml \
+  --namespace spanner-autoscaler \
+  --create-namespace
+```
+
+#### Deploying with Terraform on Azure AKS:
+```bash
+cd terraform/examples/aks
+terraform init
+terraform apply -var="resource_group_name=my-rg" -var="cluster_name=my-spanner-aks-cluster"
+```
+
+> [!TIP]
+> **Azure AKS Metrics**: Works with in-cluster Prometheus or [Azure Monitor managed service for Prometheus](https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/prometheus-metrics-overview) using standard PromQL endpoints.
+
+---
+
+### 3. Google Kubernetes Engine (GKE)
+
+#### Deploying with Helm on GKE:
+```bash
+helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
+  -f ./helm-values-examples/values-gke-regional.yaml \
+  --namespace spanner-autoscaler \
+  --create-namespace
+```
+
+#### Deploying with Terraform on GKE:
+```bash
+cd terraform/examples/gke
+terraform init
 terraform apply
 ```
 

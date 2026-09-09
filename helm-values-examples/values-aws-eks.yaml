@@ -1,0 +1,54 @@
+# ==============================================================================
+# Spanner Omni Autoscaler - AWS EKS (Elastic Kubernetes Service) Values
+# ==============================================================================
+spannerOmni:
+  namespace: "spanner-ns"
+  deploymentEndpoint: "spanner.spanner-ns.svc.cluster.local:15000"
+  
+  # Option A: In-cluster Prometheus or OTel Collector deployed on EKS
+  prometheusAddress: "http://prometheus-service.monitoring.svc.cluster.local:9090"
+  
+  # Option B: If querying Amazon Managed Service for Prometheus (AMP) via local OTel collector proxy:
+  # prometheusAddress: "http://adot-collector.monitoring.svc.cluster.local:9090"
+
+  rootServersPerZone: 3
+  safeScaleDown: true
+
+# Multi-AZ Targets across AWS Availability Zones (e.g. us-east-1a, us-east-1b, us-east-1c)
+targets:
+  - name: "spanner-a" # Zone: us-east-1a
+    minReplicas: 3
+    maxReplicas: 12
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+
+  - name: "spanner-b" # Zone: us-east-1b
+    minReplicas: 3
+    maxReplicas: 12
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+
+  - name: "spanner-c" # Zone: us-east-1c
+    minReplicas: 3
+    maxReplicas: 12
+    cpuTargetPercent: 65
+    storageTargetPercent: 80
+
+unifiedModel:
+  enabled: true
+  schedule: "*/2 * * * *"
+
+# Optional: Enable integrated Prometheus and Grafana on EKS if not present
+monitoring:
+  namespace: "monitoring"
+  prometheus:
+    enabled: false # Set true to deploy integrated Prometheus on EKS
+  grafana:
+    enabled: false  # Set true to deploy integrated Grafana on EKS
+    serviceType: ClusterIP
+
+grafana:
+  enabled: true
+  namespace: "monitoring"
+  extraLabels:
+    grafana_dashboard: "1"
