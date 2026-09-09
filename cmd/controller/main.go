@@ -11,6 +11,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/api/v1alpha1"
 	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/pkg/controller"
+	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/pkg/poller"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -32,11 +33,16 @@ var (
 func main() {
 	var kubeconfig string
 	var syncPeriod time.Duration
+	var mode string
+	var configPath string
+
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file (optional, uses in-cluster config if empty)")
 	flag.DurationVar(&syncPeriod, "sync-period", 30*time.Second, "Evaluation and reconciliation sync interval")
+	flag.StringVar(&mode, "mode", "controller", "Execution mode: 'controller' (CRD watcher) or 'unified' (ConfigMap poller)")
+	flag.StringVar(&configPath, "config", "/etc/autoscaler/autoscaler-config.yaml", "Path to autoscaler config file (unified mode)")
 	flag.Parse()
 
-	log.Println("Starting Spanner Omni Autoscaler Controller...")
+	log.Printf("Starting Spanner Omni Autoscaler (mode: %s)...", mode)
 
 	var config *rest.Config
 	var err error
@@ -54,15 +60,30 @@ func main() {
 		log.Fatalf("Failed to create Kubernetes clientset: %v", err)
 	}
 
+	reconciler := controller.NewReconciler(clientset)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if mode == "unified" {
+		log.Printf("Running in Unified Model mode with config: %s", configPath)
+		configs, err := poller.ParseConfigMapYAML(configPath)
+		if err != nil {
+			log.Fatalf("Failed to parse ConfigMap file %s: %v", configPath, err)
+		}
+		log.Printf("Loaded %d target configurations from ConfigMap", len(configs))
+		for _, cfg := range configs {
+			if err := reconciler.ReconcileConfigMapTarget(ctx, &cfg); err != nil {
+				log.Printf("Error reconciling target %s/%s: %v", cfg.Namespace, cfg.StatefulSetName, err)
+			}
+		}
+		log.Println("Unified evaluation cycle completed.")
+		return
+	}
+
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
 		log.Fatalf("Failed to create dynamic client: %v", err)
 	}
-
-	reconciler := controller.NewReconciler(clientset)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 
 	ticker := time.NewTicker(syncPeriod)
 	defer ticker.Stop()

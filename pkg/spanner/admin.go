@@ -82,7 +82,15 @@ func (c *adminClient) DecommissionServer(ctx context.Context, zone, serverName, 
 		namespace = "spanner-ns"
 	}
 
-	args := []string{"deployment", "servers", "delete", serverName}
+	// The spanner deployment servers delete command expects server name as host:port or ID
+	// If full resource name like 'zones/europe-west4-a/servers/spanner-a-3.pod.spanner-ns:15000' is passed,
+	// extract the host:port portion or relative server ID.
+	targetServerId := serverName
+	if idx := strings.LastIndex(serverName, "/servers/"); idx != -1 {
+		targetServerId = serverName[idx+len("/servers/"):]
+	}
+
+	args := []string{"deployment", "servers", "delete", targetServerId, "--quiet"}
 	if zone != "" {
 		args = append(args, fmt.Sprintf("--zone=%s", zone))
 	}
@@ -94,7 +102,7 @@ func (c *adminClient) DecommissionServer(ctx context.Context, zone, serverName, 
 	cmd := exec.CommandContext(ctx, c.cliPath, args...)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		log.Printf("[Spanner Admin] Server %s decommission response: %s", serverName, string(out))
+		log.Printf("[Spanner Admin] Server %s decommission response: %s", targetServerId, string(out))
 		return nil
 	}
 
@@ -102,7 +110,7 @@ func (c *adminClient) DecommissionServer(ctx context.Context, zone, serverName, 
 	log.Printf("[Spanner Admin] Direct CLI failed (%v). Falling back to kubectl exec into %s/spanner-a-0...", err, namespace)
 	k8sArgs := []string{
 		"exec", "spanner-a-0", "-n", namespace, "-c", "spanner", "--",
-		"/google/spanner/bin/spanner", "deployment", "servers", "delete", serverName,
+		"/google/spanner/bin/spanner", "deployment", "servers", "delete", targetServerId, "--quiet",
 	}
 	if zone != "" {
 		k8sArgs = append(k8sArgs, fmt.Sprintf("--zone=%s", zone))
@@ -116,10 +124,10 @@ func (c *adminClient) DecommissionServer(ctx context.Context, zone, serverName, 
 	kCmd := exec.CommandContext(ctx, "kubectl", k8sArgs...)
 	kOut, kErr := kCmd.CombinedOutput()
 	if kErr != nil {
-		return fmt.Errorf("decommission server %s failed: %w (output: %s)", serverName, kErr, string(kOut))
+		return fmt.Errorf("decommission server %s failed: %w (output: %s)", targetServerId, kErr, string(kOut))
 	}
 
-	log.Printf("[Spanner Admin] Server %s decommission via kubectl exec succeeded: %s", serverName, string(kOut))
+	log.Printf("[Spanner Admin] Server %s decommission via kubectl exec succeeded: %s", targetServerId, string(kOut))
 	return nil
 }
 

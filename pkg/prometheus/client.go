@@ -134,12 +134,22 @@ func (c *openStandardMetricsClient) Query(ctx context.Context, promQL string) (f
 // GetCPUUtilization computes CPU utilization % based on official Spanner Omni alert expression:
 // (sum(spanner_cpu_utilization_by_priority_and_category) * 100) / sum(spanner_available_milligcu)
 func (c *openStandardMetricsClient) GetCPUUtilization(ctx context.Context, namespace, statefulSetName string) (float64, error) {
-	query := fmt.Sprintf(`(sum(spanner_cpu_utilization_by_priority_and_category{namespace="%s",spanner_server=~"%s-.*"}) * 100) / (sum(spanner_available_milligcu{namespace="%s",spanner_server=~"%s-.*"}) > 0)`,
-		namespace, statefulSetName, namespace, statefulSetName)
+	// First try without namespace restriction (standard for in-pod Spanner Omni job configs)
+	query := fmt.Sprintf(`(sum(spanner_cpu_utilization_by_priority_and_category{spanner_server=~"%s-.*"}) * 100) / (sum(spanner_available_milligcu{spanner_server=~"%s-.*"}) > 0)`,
+		statefulSetName, statefulSetName)
 
 	val, err := c.Query(ctx, query)
 	if err == nil {
 		return val, nil
+	}
+
+	// Try with namespace if present
+	if namespace != "" {
+		nsQuery := fmt.Sprintf(`(sum(spanner_cpu_utilization_by_priority_and_category{namespace="%s",spanner_server=~"%s-.*"}) * 100) / (sum(spanner_available_milligcu{namespace="%s",spanner_server=~"%s-.*"}) > 0)`,
+			namespace, statefulSetName, namespace, statefulSetName)
+		if val, nsErr := c.Query(ctx, nsQuery); nsErr == nil {
+			return val, nil
+		}
 	}
 
 	log.Printf("[Metrics] Native spanner_cpu_utilization query failed (%v), trying cAdvisor fallback...", err)
@@ -158,12 +168,20 @@ func (c *openStandardMetricsClient) GetCPUUtilization(ctx context.Context, names
 // GetStorageUtilization computes storage utilization % based on official Spanner Omni alert expression:
 // sum by (spanner_server)(filesystem_size{type="used"}) / sum by (spanner_server)(filesystem_size{type="total"})
 func (c *openStandardMetricsClient) GetStorageUtilization(ctx context.Context, namespace, statefulSetName string) (float64, error) {
-	query := fmt.Sprintf(`(sum(filesystem_size{type="used",namespace="%s",spanner_server=~"%s-.*"}) / sum(filesystem_size{type="total",namespace="%s",spanner_server=~"%s-.*"})) * 100`,
-		namespace, statefulSetName, namespace, statefulSetName)
+	query := fmt.Sprintf(`(sum(filesystem_size{type="used",spanner_server=~"%s-.*"}) / sum(filesystem_size{type="total",spanner_server=~"%s-.*"})) * 100`,
+		statefulSetName, statefulSetName)
 
 	val, err := c.Query(ctx, query)
 	if err == nil {
 		return val, nil
+	}
+
+	if namespace != "" {
+		nsQuery := fmt.Sprintf(`(sum(filesystem_size{type="used",namespace="%s",spanner_server=~"%s-.*"}) / sum(filesystem_size{type="total",namespace="%s",spanner_server=~"%s-.*"})) * 100`,
+			namespace, statefulSetName, namespace, statefulSetName)
+		if val, nsErr := c.Query(ctx, nsQuery); nsErr == nil {
+			return val, nil
+		}
 	}
 
 	log.Printf("[Metrics] Native filesystem_size query failed (%v), trying kubelet fallback...", err)
@@ -185,13 +203,13 @@ func (c *openStandardMetricsClient) GetSpannerAlerts(ctx context.Context, namesp
 	alerts := &SpannerOmniAlertStatus{}
 
 	// 1. TrueTime Alerts: TrueTimeUnavailable (true_time_is_available < 1)
-	ttAvailQuery := fmt.Sprintf(`min(true_time_is_available{namespace="%s",spanner_server=~"%s-.*"})`, namespace, statefulSetName)
+	ttAvailQuery := fmt.Sprintf(`min(true_time_is_available{spanner_server=~"%s-.*"})`, statefulSetName)
 	if val, err := c.Query(ctx, ttAvailQuery); err == nil && val < 1.0 {
 		alerts.TrueTimeUnavailable = true
 	}
 
 	// 2. TrueTime Alerts: ClockSlaViolation (sla_tester_violation_count > 0)
-	clockSlaQuery := fmt.Sprintf(`max(sla_tester_violation_count{namespace="%s",spanner_server=~"%s-.*"})`, namespace, statefulSetName)
+	clockSlaQuery := fmt.Sprintf(`max(sla_tester_violation_count{spanner_server=~"%s-.*"})`, statefulSetName)
 	if val, err := c.Query(ctx, clockSlaQuery); err == nil && val > 0 {
 		alerts.ClockSlaViolation = true
 	}
@@ -212,8 +230,8 @@ func (c *openStandardMetricsClient) GetSpannerAlerts(ctx context.Context, namesp
 	}
 
 	// 5. Storage Per vCPU Alert: SpannerStoragePerVCPUTooHigh (> 512000 KiB = 500 GiB / vCPU)
-	storagePerVCPUQuery := fmt.Sprintf(`(sum(filesystem_size{type="used",namespace="%s",spanner_server=~"%s-.*"}) / sum(spanner_box_vm_cpu_total{namespace="%s",spanner_server=~"%s-.*"}))`,
-		namespace, statefulSetName, namespace, statefulSetName)
+	storagePerVCPUQuery := fmt.Sprintf(`(sum(filesystem_size{type="used",spanner_server=~"%s-.*"}) / sum(spanner_box_vm_cpu_total{spanner_server=~"%s-.*"}))`,
+		statefulSetName, statefulSetName)
 	if val, err := c.Query(ctx, storagePerVCPUQuery); err == nil && val > 512000.0 {
 		alerts.StoragePerVCPUTooHigh = true
 	}

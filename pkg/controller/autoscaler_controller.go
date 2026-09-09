@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/api/v1alpha1"
+	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/pkg/poller"
 	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/pkg/prometheus"
 	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/pkg/scaler"
 	"github.com/GoogleCloudPlatform/spanner-omni-autoscaler/pkg/spanner"
@@ -136,6 +137,12 @@ func (r *Reconciler) ReconcileAutoscaler(ctx context.Context, as *v1alpha1.Spann
 	// 4. Safe scale down workflow (Spanner Omni topology data relocation before K8s replica decrease)
 	if decision.Action == "SCALE_DOWN" && as.Spec.SpannerOmniAdmin != nil && as.Spec.SpannerOmniAdmin.SafeScaleDown {
 		zone := sts.Labels["zone"]
+		if zone == "" {
+			zone = sts.Spec.Template.Labels["zone"]
+		}
+		if zone == "" {
+			zone = sts.Spec.Template.Spec.NodeSelector["topology.kubernetes.io/zone"]
+		}
 		endpoint := as.Spec.SpannerOmniAdmin.DeploymentEndpoint
 		log.Printf("[Autoscaler %s/%s] SafeScaleDown active. Draining Spanner Omni servers with index >= %d in zone %s...",
 			as.Namespace, as.Name, decision.TargetReplicas, zone)
@@ -226,4 +233,147 @@ func mapCRDSpecToScalerSpec(spec *v1alpha1.SpannerOmniAutoscalerSpec) *scaler.Sp
 	}
 
 	return scalerSpec
+}
+
+// ReconcileConfigMapTarget reconciles a SpannerOmniConfig loaded from the ConfigMap (Unified Model).
+func (r *Reconciler) ReconcileConfigMapTarget(ctx context.Context, cfg *poller.SpannerOmniConfig) error {
+	targetNamespace := cfg.Namespace
+	targetName := cfg.StatefulSetName
+
+	log.Printf("[Unified Autoscaler] Evaluating target StatefulSet %s/%s", targetNamespace, targetName)
+
+	// 1. Fetch target StatefulSet
+	sts, err := r.kubeClient.AppsV1().StatefulSets(targetNamespace).Get(ctx, targetName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to fetch target StatefulSet %s/%s: %w", targetNamespace, targetName, err)
+	}
+
+	currentReplicas := int32(1)
+	if sts.Spec.Replicas != nil {
+		currentReplicas = *sts.Spec.Replicas
+	}
+
+	// 2. Query Prometheus for metrics & active alerts
+	promClient := prometheus.NewClient(cfg.PrometheusAddress, 10*time.Second)
+	metricValues := make(map[string]float64)
+
+	cpuVal, err := promClient.GetCPUUtilization(ctx, targetNamespace, targetName)
+	if err != nil {
+		log.Printf("[Unified Autoscaler %s/%s] Warning: unable to retrieve CPU: %v", targetNamespace, targetName, err)
+	} else {
+		metricValues[string(scaler.MetricTypeCPUUtilization)] = cpuVal
+		log.Printf("[Unified Autoscaler %s/%s] Observed CPU Utilization: %.2f%%", targetNamespace, targetName, cpuVal)
+	}
+
+	storageVal, err := promClient.GetStorageUtilization(ctx, targetNamespace, targetName)
+	if err != nil {
+		log.Printf("[Unified Autoscaler %s/%s] Warning: unable to retrieve Storage: %v", targetNamespace, targetName, err)
+	} else {
+		metricValues[string(scaler.MetricTypeStorageUtilization)] = storageVal
+		log.Printf("[Unified Autoscaler %s/%s] Observed Storage Utilization: %.2f%%", targetNamespace, targetName, storageVal)
+	}
+
+	var alertInputs *scaler.AlertInputs
+	spannerAlerts, err := promClient.GetSpannerAlerts(ctx, targetNamespace, targetName)
+	if err != nil {
+		log.Printf("[Unified Autoscaler %s/%s] Warning: unable to fetch Prometheus alerts: %v", targetNamespace, targetName, err)
+	} else if spannerAlerts != nil {
+		alertInputs = &scaler.AlertInputs{
+			TrueTimeUnavailable:        spannerAlerts.TrueTimeUnavailable,
+			ClockSlaViolation:          spannerAlerts.ClockSlaViolation,
+			SpannerHighCPUUtilization:  spannerAlerts.HighCPUUtilization,
+			StorageUtilizationWarning:  spannerAlerts.StorageUtilizationWarning,
+			StorageUtilizationCritical: spannerAlerts.StorageUtilizationCritical,
+			StoragePerVCPUTooHigh:      spannerAlerts.StoragePerVCPUTooHigh,
+		}
+	}
+
+	// 3. Build scaler Spec
+	scalerSpec := &scaler.Spec{
+		TargetRef: scaler.TargetRef{
+			Name:      targetName,
+			Namespace: targetNamespace,
+		},
+		MinReplicas: cfg.MinSize,
+		MaxReplicas: cfg.MaxSize,
+		SpannerOmniAdmin: &scaler.SpannerOmniAdminConfig{
+			DeploymentEndpoint: cfg.DeploymentEndpoint,
+			SafeScaleDown:      cfg.SafeScaleDown,
+			RootServersPerZone: cfg.RootServersPerZone,
+		},
+	}
+
+	for _, m := range cfg.Metrics {
+		targetVal := m.RegionalThreshold
+		if targetVal == 0 {
+			targetVal = m.TargetThreshold
+		}
+		if m.Name == "high_priority_cpu" || m.Name == "cpu" {
+			scalerSpec.Metrics = append(scalerSpec.Metrics, scaler.MetricTarget{
+				Type:               scaler.MetricTypeCPUUtilization,
+				AverageUtilization: &targetVal,
+			})
+		} else if m.Name == "storage_utilization" || m.Name == "storage" {
+			scalerSpec.Metrics = append(scalerSpec.Metrics, scaler.MetricTarget{
+				Type:               scaler.MetricTypeStorageUtilization,
+				AverageUtilization: &targetVal,
+			})
+		}
+	}
+
+	scalerStatus := &scaler.Status{
+		CurrentReplicas: currentReplicas,
+		DesiredReplicas: currentReplicas,
+	}
+
+	// 4. Evaluate scaling decision
+	decision := r.evaluator.Evaluate(scalerSpec, scalerStatus, currentReplicas, metricValues, alertInputs, time.Now())
+
+	log.Printf("[Unified Autoscaler %s/%s] Evaluator Decision: Action=%s, Current=%d, Desired=%d, Reason=%s",
+		targetNamespace, targetName, decision.Action, decision.CurrentReplicas, decision.TargetReplicas, decision.Reason)
+
+	if decision.Action == "NONE" || decision.TargetReplicas == currentReplicas {
+		return nil
+	}
+
+	// 5. Safe scale down workflow if decreasing
+	if decision.Action == "SCALE_DOWN" && cfg.SafeScaleDown {
+		zone := sts.Labels["zone"]
+		if zone == "" {
+			zone = sts.Spec.Template.Labels["zone"]
+		}
+		if zone == "" {
+			zone = sts.Spec.Template.Spec.NodeSelector["topology.kubernetes.io/zone"]
+		}
+		if zone == "" {
+			zone = cfg.Zone
+		}
+		endpoint := cfg.DeploymentEndpoint
+		log.Printf("[Unified Autoscaler %s/%s] SafeScaleDown active. Draining Spanner Omni servers with index >= %d in zone %s...",
+			targetNamespace, targetName, decision.TargetReplicas, zone)
+
+		err := r.spannerAdmin.DrainAndDecommissionHighestIndex(ctx, zone, targetName, targetNamespace, endpoint, decision.TargetReplicas)
+		if err != nil {
+			log.Printf("[Unified Autoscaler %s/%s] Error during Spanner server decommission: %v", targetNamespace, targetName, err)
+			return fmt.Errorf("spanner server decommission failed: %w", err)
+		}
+	}
+
+	// 6. Patch StatefulSet replicas
+	patchData := fmt.Sprintf(`{"spec":{"replicas":%d}}`, decision.TargetReplicas)
+	log.Printf("[Unified Autoscaler %s/%s] Patching StatefulSet %s/%s replicas to %d", targetNamespace, targetName, targetNamespace, targetName, decision.TargetReplicas)
+
+	_, err = r.kubeClient.AppsV1().StatefulSets(targetNamespace).Patch(
+		ctx,
+		targetName,
+		types.StrategicMergePatchType,
+		[]byte(patchData),
+		metav1.PatchOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to patch StatefulSet replicas: %w", err)
+	}
+
+	log.Printf("[Unified Autoscaler %s/%s] Successfully patched replicas from %d to %d", targetNamespace, targetName, currentReplicas, decision.TargetReplicas)
+	return nil
 }
