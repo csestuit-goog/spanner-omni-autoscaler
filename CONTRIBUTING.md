@@ -1,6 +1,6 @@
-# Contributing to Spanner Omni on Regional GKE
+# Contributing to Spanner Omni Autoscaler
 
-Thank you for your interest in contributing to the **Spanner Omni on Regional GKE** project! We welcome bug fixes, documentation improvements, Terraform module enhancements, and operational runbook scripts.
+Thank you for your interest in contributing to the **Google Cloud Spanner Omni Autoscaler** project! We welcome bug fixes, documentation improvements, Helm chart updates, and multi-cloud platform support.
 
 ---
 
@@ -8,36 +8,40 @@ Thank you for your interest in contributing to the **Spanner Omni on Regional GK
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/csestuit-goog/spanner-omni-demo-regional.git
-   cd spanner-omni-demo-regional
+   git clone https://github.com/cloud-gtm/spanner-omni-autoscaler.git
+   cd spanner-omni-autoscaler
    ```
 
 2. **Required Tooling**:
-   - [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install) (authenticated with `gcloud auth login`)
-   - [Terraform CLI](https://developer.hashicorp.com/terraform/downloads) (version >= 1.5.0)
+   - [Go](https://go.dev/doc/install) (version >= 1.22)
    - [Kubernetes CLI (`kubectl`)](https://kubernetes.io/docs/tasks/tools/)
    - [Helm CLI](https://helm.sh/docs/intro/install/) (version >= 3.12.0)
+   - [Terraform CLI](https://developer.hashicorp.com/terraform/downloads) (version >= 1.5.0)
 
-3. **Validate Terraform Configuration**:
+3. **Run Unit Tests**:
    ```bash
-   cd terraform
-   terraform fmt -check
-   terraform validate
+   go test -v ./pkg/scaler/... ./pkg/prometheus/... ./pkg/spanner/... ./pkg/poller/...
    ```
 
-4. **Validate Shell Scripts**:
+4. **Lint Helm Chart**:
    ```bash
-   shellcheck scripts/*.sh quickstart.sh
+   helm lint helm/spanner-omni-autoscaler/
+   ```
+
+5. **Format & Validate Terraform**:
+   ```bash
+   cd terraform && terraform fmt -check -recursive
    ```
 
 ---
 
 ## 📝 Code Style & Guidelines
 
+- **Go**: Follow official Go guidelines (`gofmt`, `go vet`). All exported functions and structs must have descriptive comments.
+- **Helm**: Ensure templates pass `helm lint` and avoid unescaped Go template tokens when embedding Prometheus alert rules.
 - **Terraform**: Follow standard HashiCorp HCL style guidelines. Run `terraform fmt -recursive` before committing.
 - **Documentation**: Keep `README.md`, `DESIGN.md`, and `DEMO_GUIDE.md` updated in synchronization whenever architecture or CLI workflows change.
-- **Resource Attribution**: Ensure all Cloud SDK commands include appropriate metric tags (`CLOUDSDK_METRICS_ENVIRONMENT`).
-- **Data Protection**: Never commit credentials, license keys, or sensitive `.tfvars` files. Use `.gitignore` to protect state files.
+- **Security & Safety**: Always protect Spanner Paxos quorums (root servers) and TrueTime health in scaling calculations.
 
 ---
 
@@ -47,8 +51,8 @@ Thank you for your interest in contributing to the **Spanner Omni on Regional GK
    ```bash
    git checkout -b feature/my-enhancement
    ```
-2. Make your modifications, format code, and test locally against a development GKE cluster.
-3. Commit your changes using clear, conventional commit messages (e.g. `docs: update scaling guide`, `feat: add automated backup script`).
+2. Make your modifications, format code, and ensure all tests pass.
+3. Commit your changes using clear, conventional commit messages (e.g. `feat: add stepwise scaling algorithm`, `docs: update DEMO_GUIDE with EKS steps`).
 4. Push to your branch and open a Pull Request against `main`.
 
 ---

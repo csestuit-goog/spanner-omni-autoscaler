@@ -1,17 +1,17 @@
 # Google Cloud Spanner Omni Autoscaler for Kubernetes
 
-[![CI](https://github.com/csestuit-goog/spanner-omni-autoscaler/actions/workflows/ci.yml/badge.svg)](https://github.com/csestuit-goog/spanner-omni-autoscaler/actions)
+[![CI](https://github.com/cloud-gtm/spanner-omni-autoscaler/actions/workflows/ci.yml/badge.svg)](https://github.com/cloud-gtm/spanner-omni-autoscaler/actions)
 [![Engine: Spanner Omni 2026.r2-beta](https://img.shields.io/badge/Engine-Spanner_Omni_2026.r2--beta-4285F4.svg)](https://cloud.google.com/spanner-omni)
 [![Platforms: GKE | EKS | AKS](https://img.shields.io/badge/Platforms-GKE_%7C_EKS_%7C_AKS-34A853.svg)](https://cloud.google.com/kubernetes-engine)
-[![Observability: Open--Standard PromQL](https://img.shields.io/badge/Observability-Prometheus_%7C_OTel-EA4335.svg)](https://cloud.google.com/spanner-omni/prometheus-alerts)
+[![Observability: Open-Standard PromQL](https://img.shields.io/badge/Observability-Prometheus_%7C_OTel-EA4335.svg)](https://cloud.google.com/spanner-omni/prometheus-alerts)
+[![Architecture: Reference Design](https://img.shields.io/badge/Design-GTM_Reference_Architecture-FAB005.svg)](DESIGN.md)
 [![IaC: Terraform & Helm](https://img.shields.io/badge/IaC-Terraform_%26_Helm-7B42BC.svg)](terraform/)
-[![Safety: TrueTime Circuit Breaker](https://img.shields.io/badge/Safety-TrueTime_Circuit_Breaker-FAB005.svg)](DESIGN.md)
+[![Safety: TrueTime Circuit Breaker](https://img.shields.io/badge/Safety-TrueTime_Circuit_Breaker-34A853.svg)](DESIGN.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Design: Reference Architecture](https://img.shields.io/badge/Design-Production_Architecture-green.svg)](DESIGN.md)
 
-> 🚀 **Field Engineering & Customer Walkthrough**: Presenting to customers or enterprise database architects? See the complete step-by-step presentation script in [**`DEMO_GUIDE.md`**](DEMO_GUIDE.md), inspect the formal engineering architecture in [**`DESIGN.md`**](DESIGN.md), and launch the interactive runner with `./quickstart.sh`!
+> 🚀 **Customer Demo & Field Walkthrough**: Presenting to Google Cloud customers or database architects? See the complete step-by-step presentation script in [**`DEMO_GUIDE.md`**](DEMO_GUIDE.md), inspect the full technical architecture and design in [**`DESIGN.md`**](DESIGN.md), and launch the interactive runner with `./quickstart.sh`!
 
-An enterprise-grade, automated **Kubernetes-native Autoscaler** and **Helm Chart** for **Google Cloud Spanner Omni** StatefulSets across any standard Kubernetes cluster (**GKE**, **Amazon EKS**, and **Azure AKS**).
+An enterprise-grade, multi-cloud **Kubernetes-native Autoscaler**, **Helm Chart**, and **Terraform Suite** for **Google Cloud Spanner Omni** StatefulSets across any standard Kubernetes cluster (**Google Kubernetes Engine (GKE)**, **Amazon Elastic Kubernetes Service (AWS EKS)**, and **Azure Kubernetes Service (Azure AKS)**).
 
 ---
 
@@ -21,38 +21,40 @@ An enterprise-grade, automated **Kubernetes-native Autoscaler** and **Helm Chart
 - [🏛️ Architectural Design & System Topology (`DESIGN.md`)](DESIGN.md)
 - [🏗️ Project Structure](#-project-structure)
 - [🚀 Quickstart & Interactive Runner (`quickstart.sh`)](#-quickstart--interactive-runner-quickstartsh)
-- [⚙️ Easy Configuration (Point to Your Instance)](#️-easy-configuration-point-to-your-instance)
+- [⚙️ Easy Configuration & Discovery (`reconfigure.sh`)](#️-easy-configuration--discovery-reconfiguresh)
 - [📊 Open-Standard Observability (Prometheus & OTel)](#-open-standard-observability-prometheus--otel)
 - [🚨 Integration with Official Prometheus Alerts](#-integration-with-official-prometheus-alerts)
 - [📈 Integrated Grafana Dashboard](#-integrated-grafana-dashboard)
-- [🏗️ Terraform & Helm Deployment Guide](#️-terraform--helm-deployment-guide)
+- [☁️ Multi-Cloud Deployment: AWS EKS, Azure AKS & GKE](#️-multi-cloud-deployment-aws-eks-azure-aks--gke)
+- [🏗️ Terraform Infrastructure Suite (`terraform/README.md`)](terraform/README.md)
 - [🔒 Security & Compliance](#-security--compliance)
+- [🧪 Automated Test & Quality Guardrails](#-automated-test--quality-guardrails)
 - [📄 License & Contributing](#-license--contributing)
 
 ---
 
 ## 🌟 Executive Summary & Key Highlights
 
-This reference implementation solves the core challenges of horizontally autoscaling distributed databases on Kubernetes:
+This reference implementation addresses the core technical friction points of horizontally autoscaling distributed databases on Kubernetes:
 
 1. **Multi-Cloud Universal Compatibility (GKE / EKS / AKS / Bare-Metal)**:
    - Deployed as a standard Helm chart and Kubernetes Custom Resource/CronJob.
    - Built with zero cloud-provider lock-in or proprietary APIs.
-2. **Open-Standard Metrics (Avoids Cloud Monitoring / CloudWatch / Azure Monitor)**:
+2. **Open-Standard Metrics (Avoids Proprietary Cloud Monitoring Lock-in)**:
    - Queries standard **PromQL HTTP API** (`/api/v1/query`) against internal Prometheus or OpenTelemetry (OTel) Collectors.
    - Evaluates native Spanner Omni indicators exported on port `:15012/metrics` (`spanner_cpu_utilization_by_priority_and_category`, `filesystem_size`).
 3. **TrueTime Health & Safety Circuit Breaker**:
-   - Spanner's serializable transactions and Paxos consensus rely strictly on TrueTime.
+   - Spanner's serializable transactions and Paxos consensus rely strictly on bounded clock uncertainty.
    - Automatically freezes scaling actions (`BLOCKED_BY_TRUETIME`) if `TrueTimeUnavailable` or `ClockSlaViolation` alerts trigger.
-4. **Root Server Protection**:
+4. **Root Server & Paxos Quorum Protection**:
    - In Spanner Omni, root servers maintain Raft/Paxos quorums. The autoscaler guarantees that `replicas >= rootServersPerZone` (default 3), ensuring root nodes are never decommissioned.
-5. **Safe Scale-Down & Split Draining**:
+5. **Safe Scale-Down & Tablet Draining Protocol**:
    - StatefulSets terminate pods from highest to lowest index. The autoscaler decommissions the highest-index server in the Spanner Omni registry (`spanner deployment servers delete`) to migrate tablet splits *before* reducing pod counts.
 6. **Dual Deployment Topologies (Adapted from Google Cloud Spanner GKE Guide)**:
    - **Unified CronJob Model (Recommended)**: Poller and Scaler execute as a lightweight Pod on a Cron schedule (`*/2 * * * *`). Zero idle resource usage.
    - **Decoupled Controller Model**: Runs continuously as a Kubernetes Custom Controller.
-7. **Integrated Grafana Dashboard**:
-   - Pre-packaged dashboard JSON tracking TrueTime drift, CPU targets (65%), storage thresholds (80%/90%), and real-time tablet splits and moves.
+7. **Integrated Prometheus & Grafana Dashboard Stack**:
+   - Pre-packaged dashboard tracking TrueTime drift, CPU targets (65%), storage thresholds (80%/90%), and real-time tablet splits and moves.
 
 ---
 
@@ -60,235 +62,122 @@ This reference implementation solves the core challenges of horizontally autosca
 
 ```
 spanner-omni-autoscaler/
-├── README.md                           # 📖 Comprehensive documentation & usage guide
-├── DESIGN.md                           # 🏛️ Google-standard architectural design document
-├── DEMO_GUIDE.md                       # 🎯 Step-by-step customer demo & field engineering script
-├── CONTRIBUTING.md                     # 🛠️ Developer setup & contribution guidelines
-├── SECURITY.md                         # 🔒 Security policy & vulnerability reporting
-├── LICENSE                             # 📄 Apache 2.0 License
-├── quickstart.sh                       # 🚀 Universal interactive CLI & cluster runner
-├── my-spanner-values.yaml              # ⚙️ Simple user override values file
-├── Dockerfile                          # 🐳 Multi-stage distroless container build
-│
-├── api/v1alpha1/                       # 🧩 Kubernetes Custom Resource Definitions
-│   └── spanneromniautoscaler_types.go  # Golang struct definitions
-│
-├── cmd/controller/                     # 🚀 Controller Manager Entrypoint
-│   └── main.go                         # Multi-mode CLI runner (CronJob / Controller)
-│
-├── pkg/                                # 📦 Core Autoscaler Logic & Modules
-│   ├── controller/                     # K8s reconciliation & StatefulSet patching
-│   ├── scaler/                         # Scaling evaluation engine & TrueTime circuit breaker
-│   ├── prometheus/                     # Open-Standard PromQL / OTel HTTP client
-│   ├── poller/                         # Zero-dependency ConfigMap parser (GKE model)
-│   └── spanner/                        # Spanner Omni node registry & safe decommission
-│
-├── helm/spanner-omni-autoscaler/       # 📦 Production Helm Chart
-│   ├── Chart.yaml                      # Chart definition
-│   ├── values.yaml                     # Default configuration values
-│   └── templates/                      # Kubernetes manifests
-│       ├── cronjob/                    # Unified CronJob & ConfigMap templates
-│       ├── grafana/                    # Auto-provisioned Grafana Dashboard ConfigMap
-│       ├── deployment.yaml             # Decoupled Controller Deployment
-│       ├── rbac.yaml                   # Least-privilege RBAC
-│       └── serviceaccount.yaml         # In-cluster ServiceAccount
-│
-├── terraform/                          # 🏗️ Terraform Infrastructure-as-Code
-│   ├── modules/autoscaler/             # Reusable Helm-backed autoscaler module
-│   └── examples/                       # Production cloud examples
-│       ├── gke/main.tf                 # Google Kubernetes Engine deployment
-│       ├── eks/main.tf                 # Amazon Elastic Kubernetes Service deployment
-│       └── aks/main.tf                 # Azure Kubernetes Service deployment
-│
-├── grafana/dashboards/                 # 📊 Integrated Grafana Dashboards
-│   └── spanner-omni-autoscaler-dashboard.json
-│
-└── .github/workflows/
-    └── ci.yml                          # 🤖 GitHub Actions CI Pipeline
+├── cmd/
+│   └── scaler/
+│       └── main.go                 # 🚀 Unified Autoscaler CLI & CronJob entrypoint
+├── pkg/
+│   ├── poller/                     # ⏱️ PromQL evaluation & metric polling
+│   ├── prometheus/                 # 📊 Prometheus client & fallback metric drivers
+│   ├── scaler/                     # ⚙️ Scaling algorithm & TrueTime circuit breaker
+│   └── spanner/                    # 🛡️ In-pod server decommission & tablet split evictor
+├── helm/
+│   └── spanner-omni-autoscaler/    # 📦 Production Helm chart
+│       ├── Chart.yaml
+│       ├── values.yaml
+│       └── templates/
+│           ├── cronjob.yaml        # Unified CronJob topology
+│           ├── rbac.yaml           # Least-privilege RBAC
+│           ├── prometheus/         # Optional bundled Prometheus server & alert rules
+│           └── grafana/            # Optional bundled Grafana server & dashboards
+├── helm-values-examples/           # ☁️ Multi-Cloud pre-configured values
+│   ├── values-aws-eks.yaml         # AWS EKS override
+│   ├── values-azure-aks.yaml       # Azure AKS override
+│   └── values-gke-regional.yaml    # GKE Regional override
+├── terraform/                      # 🏗️ Terraform Infrastructure Suite
+│   ├── README.md                   # 📖 Terraform deployment guide
+│   ├── modules/autoscaler/         # Core Helm-based autoscaler module
+│   └── examples/                   # Ready-to-run examples (GKE, EKS, AKS)
+├── grafana/
+│   └── spanner-omni-autoscaler-dashboard.json # 📈 Production Grafana dashboard
+├── scripts/
+│   ├── build_image.sh              # Container build script
+│   └── sql_shell.sh                # Interactive SQL shell with pre-loaded dataset
+├── quickstart.sh                   # ⚡ Interactive deployment wizard
+├── reconfigure.sh                  # 🔄 Zero-downtime cluster reconfiguration script
+├── DEMO_GUIDE.md                   # 🎯 Complete customer presentation walkthrough
+├── DESIGN.md                       # 🏛️ Architecture & technical design specification
+├── CONTRIBUTING.md                 # 🤝 Contribution guidelines
+├── SECURITY.md                     # 🔒 Security policy
+└── LICENSE                         # 📄 Apache 2.0 License
 ```
 
 ---
 
 ## 🚀 Quickstart & Interactive Runner (`quickstart.sh`)
 
-Launch the interactive CLI runner:
+Launch the automated discovery and setup wizard:
 
 ```bash
-chmod +x ./quickstart.sh ./reconfigure.sh
+chmod +x quickstart.sh
 ./quickstart.sh
 ```
 
-Features available directly in the interactive menu:
-1. **Auto-Discover & Reconfigure for Existing Cluster**: Automatically scans your Kubernetes cluster, discovers Spanner Omni StatefulSets, zones, and Prometheus endpoints, and generates a ready-to-deploy values file.
-2. **Deploy Autoscaler via Helm (Unified Model)**.
-3. **Deploy Autoscaler via Terraform (GKE / EKS / AKS)**.
-4. **Check Autoscaler CronJob & StatefulSet Status**.
-5. **Launch Port-Forward to Grafana (:3000)**.
-6. **Run Local Unit Test Suite**.
+The script will:
+1. Auto-discover active Spanner Omni StatefulSets across all namespaces.
+2. Probe for in-cluster Prometheus and Grafana instances.
+3. Generate a tailored `my-spanner-values.yaml` file.
+4. Deploy the autoscaler with a single confirmation.
 
 ---
 
-## ⚙️ Easily Pointing to Any Existing Spanner Omni Cluster
+## ⚙️ Easy Configuration & Discovery (`reconfigure.sh`)
 
-### Method 1: Automatic Discovery & Reconfiguration (Recommended)
-
-Run the included cluster reconfigurator:
+Reconfigure the autoscaler to target an existing Spanner Omni cluster at any time:
 
 ```bash
-./reconfigure.sh [output-values.yaml]
-```
-
-This utility:
-- Automatically detects the active `kubectl` context.
-- Discovers all Spanner Omni StatefulSets (`spanner-a`, `spanner-b`, `spanner-c`, etc.) across any namespace.
-- Resolves topology zones (`europe-west4-a`, `us-central1-a`, etc.) from pod templates and node selectors.
-- Auto-detects in-cluster Prometheus and Spanner service endpoints (`spanner.spanner-ns.svc.cluster.local:15000`).
-- Prompts for confirmation/overrides and outputs a tailored values file (`spanner-omni-cluster.values.yaml`).
-
-### Method 2: Manual Values File Customization
-
-Customize [`my-spanner-values.yaml`](my-spanner-values.yaml) to point to your Spanner Omni instance:
-
-```yaml
-spannerOmni:
-  namespace: "spanner-ns"
-  deploymentEndpoint: "spanner.spanner-ns.svc.cluster.local:15000"
-  prometheusAddress: "http://prometheus-service.monitoring.svc.cluster.local:9090"
-  rootServersPerZone: 3
-  safeScaleDown: true
-
-targets:
-  - name: "spanner-a"
-    minReplicas: 3
-    maxReplicas: 10
-    cpuTargetPercent: 65
-    storageTargetPercent: 80
-
-  - name: "spanner-b"
-    minReplicas: 3
-    maxReplicas: 10
-    cpuTargetPercent: 65
-    storageTargetPercent: 80
-```
-
-Deploy or update the autoscaler pointing to your cluster:
-```bash
-helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
-  -f my-spanner-values.yaml \
-  --namespace spanner-autoscaler \
-  --create-namespace
-```
-  --create-namespace
+./reconfigure.sh \
+  --namespace spanner-ns \
+  --statefulsets spanner-a,spanner-b,spanner-c \
+  --prometheus-url http://prometheus-server.monitoring.svc.cluster.local:9090 \
+  --target-cpu 65 \
+  --min-replicas 3 \
+  --max-replicas 15
 ```
 
 ---
 
 ## 📊 Open-Standard Observability (Prometheus & OTel)
 
-Strictly avoids cloud-provider proprietary metrics APIs (Google Cloud Monitoring, AWS CloudWatch, Azure Monitor) in favor of the **Prometheus HTTP API (`/api/v1/query`)** and **OpenTelemetry (OTel) Collectors**.
+Spanner Omni nodes export standard metrics on port `:15012/metrics`. The autoscaler evaluates these open PromQL expressions:
 
-### Core PromQL Queries Evaluated:
-
-| Indicator | Spanner Omni Native PromQL Query | Container Fallback PromQL Query |
-|---|---|---|
-| **CPU Utilization %** | `(sum(spanner_cpu_utilization_by_priority_and_category{namespace="<ns>", spanner_server=~"<target>-.*"}) * 100) / sum(spanner_available_milligcu{namespace="<ns>", spanner_server=~"<target>-.*"})` | `100 * (sum(rate(container_cpu_usage_seconds_total{namespace="<ns>", pod=~"<target>-[0-9]+", container="spanner"}[2m])) / sum(kube_pod_container_resource_requests{namespace="<ns>", pod=~"<target>-[0-9]+", resource="cpu"}))` |
-| **Storage Utilization %** | `(sum(filesystem_size{type="used", namespace="<ns>", spanner_server=~"<target>-.*"}) / sum(filesystem_size{type="total", namespace="<ns>", spanner_server=~"<target>-.*"})) * 100` | `100 * (sum(kubelet_volume_stats_used_bytes{namespace="<ns>", persistentvolumeclaim=~"data-volume-<target>-.*"}) / sum(kubelet_volume_stats_capacity_bytes{namespace="<ns>", persistentvolumeclaim=~"data-volume-<target>-.*"}))` |
+| Metric | PromQL Expression | Purpose |
+| :--- | :--- | :--- |
+| **CPU Utilization %** | `(sum(spanner_cpu_utilization_by_priority_and_category) * 100) / sum(spanner_available_milligcu)` | Primary scaling indicator |
+| **TrueTime Availability** | `true_time_is_available` | Circuit breaker (< 1 freezes scaling) |
+| **Clock SLA Violations** | `sla_tester_violation_count` | Circuit breaker (> 0 freezes scaling) |
+| **Storage Utilization %** | `sum(filesystem_size{type="used"}) / sum(filesystem_size{type="total"}) * 100` | Storage capacity alert |
 
 ---
 
 ## 🚨 Integration with Official Prometheus Alerts
 
-Conforms to **[Use Prometheus alerts to monitor Spanner Omni](https://cloud.google.com/spanner-omni/prometheus-alerts)**:
-
-| Alert Rule | Threshold | Autoscaler Action & System Behavior |
-|---|---|---|
-| `TrueTimeUnavailable` | `true_time_is_available < 1` | **Safety Circuit Breaker (`BLOCKED_BY_TRUETIME`)**: Freezes all scaling actions to protect distributed consensus. |
-| `ClockSlaViolation` | `sla_tester_violation_count > 0` | **Safety Circuit Breaker (`BLOCKED_BY_TRUETIME`)**: Halts replica modification until clock drift recovers. |
-| `SpannerHighCPUUtilization` | `CPU > 65%` | **Horizontal Scale-Out**: Expands non-root servers proportionally: `desired = ceil(current * (CPU / 65))`. |
-| `SpannerStorageUtilizationWarning` | `Storage > 80%` | **Capacity Evaluation**: Flags high disk pressure and prepares partition rebalancing candidates. |
-| `SpannerStorageUtilizationCritical` | `Storage > 90%` | **Preemptive Scale-Out**: Adds +1 server immediately so Spanner Omni can split and migrate ranges. |
+The autoscaler integrates directly with official [Google Cloud Spanner Omni Prometheus Alerts](https://cloud.google.com/spanner-omni/prometheus-alerts):
+- **`TrueTimeUnavailable`**: Triggered when clock synchronization is lost. Scaling is blocked to prevent distributed transaction corruption.
+- **`ClockSlaViolation`**: Triggered when TrueTime bounds are violated. Halts all horizontal mutations.
+- **`SpannerHighCPUUtilization`**: Warns at > 65% CPU.
+- **`SpannerStorageUtilizationCritical`**: Critical alert at > 90% disk usage.
 
 ---
 
-## 📈 Integrated Observability Stack (Optional Prometheus & Grafana)
+## 📈 Integrated Grafana Dashboard
 
-Conforms to:
-- **[Use Prometheus alerts to monitor Spanner Omni](https://cloud.google.com/spanner-omni/prometheus-alerts)**
-- **[Use Grafana dashboards to monitor Spanner Omni](https://cloud.google.com/spanner-omni/grafana-dashboards)**
+The bundled dashboard (`grafana/spanner-omni-autoscaler-dashboard.json`) displays:
+- **TrueTime Circuit Breaker Status**: Visual badges indicating TrueTime availability and clock uncertainty in microseconds.
+- **CPU Scaling Target Line**: Cluster CPU utilization with dynamic 65% target line.
+- **Per-Zone Server Replicas**: Real-time replica count for each availability zone.
+- **Tablet Movement & Split Rates**: Live tablet splits and Paxos migrations.
 
-### When to Use:
-- **Customer ALREADY has Prometheus / Grafana**: The chart provisions the Dashboard ConfigMap with label `grafana_dashboard: "1"`, allowing existing Grafana sidecars to discover it automatically.
-- **Customer DOES NOT have Prometheus / Grafana**: Enable the built-in, integrated observability stack in Helm or Terraform. The chart deploys a dedicated Prometheus server with official Spanner Omni alert rules and a pre-provisioned Grafana server.
-
-### Enabling Integrated Prometheus & Grafana via Helm:
-
-Add the `monitoring` block to your values:
-
-```yaml
-monitoring:
-  namespace: "monitoring" # Target namespace for Prometheus & Grafana
-
-  prometheus:
-    enabled: true
-    retention: "15d"
-    resources:
-      requests:
-        cpu: "500m"
-        memory: 1Gi
-      limits:
-        cpu: "2"
-        memory: 4Gi
-
-  grafana:
-    enabled: true
-    serviceType: ClusterIP # Change to NodePort or LoadBalancer for external UI access
-    adminUser: "admin"
-    adminPassword: "spanneradmin"
-    resources:
-      requests:
-        cpu: "250m"
-        memory: 512Mi
-```
-
-Deploy with integrated monitoring:
 ```bash
-helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
-  -f my-spanner-values.yaml \
-  --set monitoring.prometheus.enabled=true \
-  --set monitoring.grafana.enabled=true \
-  -n spanner-autoscaler --create-namespace
+kubectl port-forward svc/grafana 3000:80 -n monitoring
 ```
-
-### Enabling via Terraform:
-
-```hcl
-module "spanner_omni_autoscaler" {
-  source = "./terraform/modules/autoscaler"
-
-  deploy_prometheus = true
-  deploy_grafana    = true
-  grafana_namespace = "monitoring"
-  ...
-}
-```
-
-The bundled dashboard ([`grafana/dashboards/spanner-omni-autoscaler-dashboard.json`](grafana/dashboards/spanner-omni-autoscaler-dashboard.json)) includes:
-- **TrueTime Circuit Breakers**: Status indicators for TrueTime availability, clock SLA violations, and microsecond drift.
-- **CPU & Storage Thresholds**: Visual lines at 65% (CPU target), 80% (Storage Warning), and 90% (Storage Critical).
-- **Replica Topologies**: Real-time current vs. desired StatefulSet replica counts.
-- **Tablet Partitions & Range Movement**: Split, move, and merge rates across nodes.
 
 ---
 
----
+## ☁️ Multi-Cloud Deployment: AWS EKS, Azure AKS & GKE
 
-## ☁️ Multi-Cloud Deployment Guide: AWS EKS, Azure AKS & GKE
+Pre-configured Helm values are provided in `helm-values-examples/`:
 
-This autoscaler runs identically on any Kubernetes platform using **Open-Standard PromQL queries** and **Kubernetes-native primitives**. Pre-configured value files are provided under [`helm-values-examples/`](helm-values-examples/):
-
-### 1. Amazon Elastic Kubernetes Service (AWS EKS)
-
-#### Deploying with Helm on AWS EKS:
+### Amazon Elastic Kubernetes Service (AWS EKS)
 ```bash
 helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
   -f ./helm-values-examples/values-aws-eks.yaml \
@@ -296,21 +185,7 @@ helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
   --create-namespace
 ```
 
-#### Deploying with Terraform on AWS EKS:
-```bash
-cd terraform/examples/eks
-terraform init
-terraform apply -var="cluster_name=my-spanner-eks-cluster"
-```
-
-> [!TIP]
-> **AWS EKS Metrics**: Works seamlessly with standard Prometheus deployed on EKS or with [Amazon Managed Service for Prometheus (AMP)](https://aws.amazon.com/prometheus/) via an in-cluster AWS Distro for OpenTelemetry (ADOT) Collector proxy.
-
----
-
-### 2. Azure Kubernetes Service (Azure AKS)
-
-#### Deploying with Helm on Azure AKS:
+### Azure Kubernetes Service (Azure AKS)
 ```bash
 helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
   -f ./helm-values-examples/values-azure-aks.yaml \
@@ -318,21 +193,7 @@ helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
   --create-namespace
 ```
 
-#### Deploying with Terraform on Azure AKS:
-```bash
-cd terraform/examples/aks
-terraform init
-terraform apply -var="resource_group_name=my-rg" -var="cluster_name=my-spanner-aks-cluster"
-```
-
-> [!TIP]
-> **Azure AKS Metrics**: Works with in-cluster Prometheus or [Azure Monitor managed service for Prometheus](https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/prometheus-metrics-overview) using standard PromQL endpoints.
-
----
-
-### 3. Google Kubernetes Engine (GKE)
-
-#### Deploying with Helm on GKE:
+### Google Kubernetes Engine (GKE Regional)
 ```bash
 helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
   -f ./helm-values-examples/values-gke-regional.yaml \
@@ -340,12 +201,19 @@ helm upgrade --install spanner-autoscaler ./helm/spanner-omni-autoscaler \
   --create-namespace
 ```
 
-#### Deploying with Terraform on GKE:
+---
+
+## 🏗️ Terraform Infrastructure Suite (`terraform/README.md`)
+
+Deploy the autoscaler via Terraform:
+
 ```bash
 cd terraform/examples/gke
 terraform init
-terraform apply
+terraform apply -var="project_id=my-project" -var="cluster_name=spanner-cluster" -var="location=europe-west1"
 ```
+
+See [**`terraform/README.md`**](terraform/README.md) for full module documentation and input variable references.
 
 ---
 
@@ -358,6 +226,23 @@ terraform apply
 
 ---
 
+## 🧪 Automated Test & Quality Guardrails
+
+Run unit tests and linting locally:
+
+```bash
+# Run unit test suite
+go test -v ./pkg/scaler/... ./pkg/prometheus/... ./pkg/spanner/... ./pkg/poller/...
+
+# Lint Helm chart
+helm lint helm/spanner-omni-autoscaler/
+
+# Validate Terraform formatting
+cd terraform && terraform fmt -check -recursive
+```
+
+---
+
 ## 📄 License & Contributing
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE) and [CONTRIBUTING.md](CONTRIBUTING.md) for details.
