@@ -38,7 +38,7 @@ data:
             labels:
               severity: critical
             annotations:
-              summary: "TrueTime is unavailable on {{ $labels.spanner_server }}"
+              summary: "TrueTime is unavailable on {{`{{ $labels.spanner_server }}`}}"
               description: "TrueTime availability is degraded. Scaling operations must be frozen."
 
           - alert: ClockSlaViolation
@@ -47,7 +47,7 @@ data:
             labels:
               severity: critical
             annotations:
-              summary: "Clock SLA violation on {{ $labels.spanner_server }}"
+              summary: "Clock SLA violation on {{`{{ $labels.spanner_server }}`}}"
               description: "Clock synchronization SLA has been violated."
 
           # Resource & Storage Alerts
