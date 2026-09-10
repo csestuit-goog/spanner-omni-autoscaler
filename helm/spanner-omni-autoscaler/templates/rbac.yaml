@@ -1,0 +1,64 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-spanner-omni-autoscaler
+rules:
+  # Permissions to manage SpannerOmniAutoscaler CRs
+  - apiGroups:
+      - autoscaling.spanner.google.com
+    resources:
+      - spanneromniautoscalers
+      - spanneromniautoscalers/status
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
+  # Permissions to observe and patch Spanner Omni StatefulSets
+  - apiGroups:
+      - apps
+    resources:
+      - statefulsets
+      - statefulsets/scale
+      - statefulsets/status
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
+  # Permissions to inspect pods and execute safe decommission CLI commands
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - persistentvolumeclaims
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+  # Required to execute /google/spanner/bin/spanner inside pod during safe scale down
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - create
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-spanner-omni-autoscaler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-spanner-omni-autoscaler
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

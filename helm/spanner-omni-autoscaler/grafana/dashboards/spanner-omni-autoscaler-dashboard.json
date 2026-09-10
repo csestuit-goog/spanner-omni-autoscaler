@@ -1,0 +1,315 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "TrueTime Health & Safety Circuit Breakers",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "0": { "color": "red", "text": "DOWN / UNAVAILABLE" }, "1": { "color": "green", "text": "HEALTHY" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false }
+      },
+      "title": "TrueTime Availability (true_time_is_available)",
+      "description": "Alert: TrueTimeUnavailable (< 1). When unavailable, autoscaling is frozen to prevent split-brain.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "min(true_time_is_available{namespace=\"$namespace\"})",
+          "legendFormat": "TrueTime Available",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "0": { "color": "green", "text": "PASSING SLA" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false }
+      },
+      "title": "Clock SLA Violations (sla_tester_violation_count)",
+      "description": "Alert: ClockSlaViolation (> 0). Freezes scaling until clock synchronization stabilizes.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "max(sla_tester_violation_count{namespace=\"$namespace\"})",
+          "legendFormat": "SLA Violations",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2 },
+          "unit": "µs"
+        }
+      },
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 1 },
+      "id": 3,
+      "title": "TrueTime Uncertainty & Clock Drift",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "spanner_truetime_uncertainty_micros{namespace=\"$namespace\"}",
+          "legendFormat": "{{spanner_server}} uncertainty",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "Compute & Storage Scaling Metrics vs Alert Thresholds",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "lineWidth": 2,
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "#EAB839", "value": 65 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 4,
+      "title": "CPU Utilization vs Autoscaling Target (65% SpannerHighCPUUtilization)",
+      "description": "Expression: (sum(spanner_cpu_utilization_by_priority_and_category)*100)/sum(spanner_available_milligcu)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(sum(spanner_cpu_utilization_by_priority_and_category{namespace=\"$namespace\"}) * 100) / sum(spanner_available_milligcu{namespace=\"$namespace\"})",
+          "legendFormat": "Cluster Average CPU %",
+          "refId": "A"
+        },
+        {
+          "expr": "(sum by (spanner_server) (spanner_cpu_utilization_by_priority_and_category{namespace=\"$namespace\"}) * 100) / sum by (spanner_server) (spanner_available_milligcu{namespace=\"$namespace\"})",
+          "legendFormat": "{{spanner_server}} CPU %",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "#EAB839", "value": 80 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 5,
+      "title": "Storage Utilization vs Alert Thresholds (80% Warning / 90% Critical)",
+      "description": "Alert: SpannerStorageUtilizationWarning (>80%), Critical (>90%)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "100 * (sum by (spanner_server) (filesystem_size{type=\"used\",namespace=\"$namespace\"}) / sum by (spanner_server) (filesystem_size{type=\"total\",namespace=\"$namespace\"}))",
+          "legendFormat": "{{spanner_server}} Storage %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "Autoscaler Status & Replica Topologies",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "steppedLine": true
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 6,
+      "title": "StatefulSet Replicas: Current vs Target",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "kube_statefulset_status_replicas{namespace=\"$namespace\",statefulset=~\"spanner-.*\"}",
+          "legendFormat": "{{statefulset}} Current Replicas",
+          "refId": "A"
+        },
+        {
+          "expr": "kube_statefulset_replicas{namespace=\"$namespace\",statefulset=~\"spanner-.*\"}",
+          "legendFormat": "{{statefulset}} Desired Spec Replicas",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2 },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 7,
+      "title": "Tablet Partitions & Range Movement (Splits, Merges, Moves)",
+      "description": "Tracks data partitions moving across nodes during scale-out or scale-in",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(spanner_tablet_splits_total{namespace=\"$namespace\"}[5m]))",
+          "legendFormat": "Tablet Splits/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(spanner_tablet_moves_total{namespace=\"$namespace\"}[5m]))",
+          "legendFormat": "Tablet Moves/sec",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(spanner_tablet_merges_total{namespace=\"$namespace\"}[5m]))",
+          "legendFormat": "Tablet Merges/sec",
+          "refId": "C"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["spanner-omni", "autoscaler", "kubernetes", "prometheus"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "value": "prometheus" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data Source",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": { "selected": true, "value": "spanner-ns" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Namespace",
+        "name": "namespace",
+        "options": [
+          { "selected": true, "text": "spanner-ns", "value": "spanner-ns" }
+        ],
+        "query": "label_values(spanner_box_vm_cpu_total, namespace)",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
+  "timezone": "",
+  "title": "Spanner Omni - Autoscaler & Cluster Health",
+  "uid": "spanner-omni-autoscaler"
+}

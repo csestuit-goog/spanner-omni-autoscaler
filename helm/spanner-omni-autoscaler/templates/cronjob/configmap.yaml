@@ -1,0 +1,32 @@
+{{- if .Values.unifiedModel.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.unifiedModel.configMapName | default "autoscaler-config" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: spanner-omni-autoscaler
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  autoscaler-config.yaml: |
+    ---
+{{- range .Values.targets }}
+    - namespace: {{ .namespace | default $.Values.spannerOmni.namespace | default "spanner-ns" }}
+      statefulSetName: {{ .name }}
+      units: NODES
+      minSize: {{ .minReplicas | default 3 }}
+      maxSize: {{ .maxReplicas | default 10 }}
+      scalingMethod: "LINEAR"
+      rootServersPerZone: {{ .rootServersPerZone | default $.Values.spannerOmni.rootServersPerZone | default 3 }}
+      safeScaleDown: {{ if hasKey . "safeScaleDown" }}{{ .safeScaleDown }}{{ else }}{{ $.Values.spannerOmni.safeScaleDown }}{{ end }}
+      deploymentEndpoint: {{ .deploymentEndpoint | default $.Values.spannerOmni.deploymentEndpoint | quote }}
+      prometheusAddress: {{ .prometheusAddress | default $.Values.spannerOmni.prometheusAddress | quote }}
+      metrics:
+        - name: high_priority_cpu
+          regional_threshold: {{ .cpuTargetPercent | default 65 }}
+          regional_margin: 5
+        - name: storage_utilization
+          regional_threshold: {{ .storageTargetPercent | default 80 }}
+          regional_margin: 5
+{{- end }}
+{{- end }}

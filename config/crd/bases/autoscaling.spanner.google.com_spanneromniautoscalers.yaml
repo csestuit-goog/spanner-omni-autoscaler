@@ -1,0 +1,184 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: spanneromniautoscalers.autoscaling.spanner.google.com
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.15.0
+spec:
+  group: autoscaling.spanner.google.com
+  names:
+    kind: SpannerOmniAutoscaler
+    listKind: SpannerOmniAutoscalerList
+    plural: spanneromniautoscalers
+    singular: spanneromniautoscaler
+    shortNames:
+      - soa
+      - spannerautoscaler
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          description: SpannerOmniAutoscaler manages autoscaling of Spanner Omni StatefulSets.
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - targetRef
+                - minReplicas
+                - maxReplicas
+                - metrics
+                - prometheus
+              properties:
+                targetRef:
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                      description: Target StatefulSet name (e.g. spanner-a)
+                    namespace:
+                      type: string
+                      description: Target namespace (defaults to CR namespace)
+                minReplicas:
+                  type: integer
+                  minimum: 1
+                  description: Minimum replica count (must be >= root servers count)
+                maxReplicas:
+                  type: integer
+                  minimum: 1
+                  description: Maximum replica count
+                metrics:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - type
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                          - CPUUtilization
+                          - StorageUtilization
+                          - CustomPromQL
+                      averageUtilization:
+                        type: integer
+                        description: Target average utilization percentage (e.g. 65)
+                      customPromQL:
+                        type: string
+                        description: Custom PromQL query
+                      threshold:
+                        type: number
+                        description: Numeric threshold for Custom PromQL query
+                behavior:
+                  type: object
+                  properties:
+                    scaleUp:
+                      type: object
+                      properties:
+                        stabilizationWindowSeconds:
+                          type: integer
+                        maxStepReplicas:
+                          type: integer
+                        cooldownSeconds:
+                          type: integer
+                    scaleDown:
+                      type: object
+                      properties:
+                        stabilizationWindowSeconds:
+                          type: integer
+                        maxStepReplicas:
+                          type: integer
+                        cooldownSeconds:
+                          type: integer
+                prometheus:
+                  type: object
+                  required:
+                    - address
+                  properties:
+                    address:
+                      type: string
+                      description: Prometheus service URL (e.g. http://prometheus-service.monitoring.svc.cluster.local:9090)
+                    evaluationIntervalSeconds:
+                      type: integer
+                      default: 30
+                    timeoutSeconds:
+                      type: integer
+                      default: 10
+                spannerOmniAdmin:
+                  type: object
+                  properties:
+                    deploymentEndpoint:
+                      type: string
+                      description: Spanner Omni management endpoint (e.g. spanner-service:15000)
+                    safeScaleDown:
+                      type: boolean
+                      description: If true, decommissions server in Spanner topology before reducing K8s replicas
+                      default: true
+                    rootServersPerZone:
+                      type: integer
+                      description: Number of root servers per zone that must NEVER be scaled down
+                      default: 3
+            status:
+              type: object
+              properties:
+                currentReplicas:
+                  type: integer
+                desiredReplicas:
+                  type: integer
+                lastScaleTime:
+                  type: string
+                  format: date-time
+                currentMetrics:
+                  type: object
+                  additionalProperties:
+                    type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string
+      additionalPrinterColumns:
+        - name: Target
+          type: string
+          jsonPath: .spec.targetRef.name
+        - name: Min
+          type: integer
+          jsonPath: .spec.minReplicas
+        - name: Max
+          type: integer
+          jsonPath: .spec.maxReplicas
+        - name: Current
+          type: integer
+          jsonPath: .status.currentReplicas
+        - name: Desired
+          type: integer
+          jsonPath: .status.desiredReplicas
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

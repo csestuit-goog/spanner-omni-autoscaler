@@ -1,0 +1,36 @@
+{{- if .Values.customController.enabled -}}
+{{- range .Values.targets }}
+---
+apiVersion: autoscaling.spanner.google.com/v1alpha1
+kind: SpannerOmniAutoscaler
+metadata:
+  name: {{ .name }}-autoscaler
+  namespace: {{ .namespace | default $.Values.spannerOmni.namespace | default $.Release.Namespace }}
+spec:
+  targetRef:
+    name: {{ .name }}
+    namespace: {{ .namespace | default $.Values.spannerOmni.namespace | default $.Release.Namespace }}
+  minReplicas: {{ .minReplicas | default 3 }}
+  maxReplicas: {{ .maxReplicas | default 10 }}
+  metrics:
+    - type: CPUUtilization
+      averageUtilization: {{ .cpuTargetPercent | default 65 }}
+    - type: StorageUtilization
+      averageUtilization: {{ .storageTargetPercent | default 80 }}
+  prometheus:
+    address: {{ .prometheusAddress | default $.Values.spannerOmni.prometheusAddress | quote }}
+    evaluationIntervalSeconds: 30
+    timeoutSeconds: 10
+  spannerOmniAdmin:
+    deploymentEndpoint: {{ .deploymentEndpoint | default $.Values.spannerOmni.deploymentEndpoint | quote }}
+    safeScaleDown: {{ if hasKey . "safeScaleDown" }}{{ .safeScaleDown }}{{ else }}{{ $.Values.spannerOmni.safeScaleDown }}{{ end }}
+    rootServersPerZone: {{ .rootServersPerZone | default $.Values.spannerOmni.rootServersPerZone | default 3 }}
+  behavior:
+    scaleUp:
+      cooldownSeconds: 120
+      maxStepReplicas: 2
+    scaleDown:
+      cooldownSeconds: 300
+      maxStepReplicas: 1
+{{- end }}
+{{- end }}

@@ -2,19 +2,36 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    branches: [ main ]
 
 jobs:
-  build:
+  test:
+    name: Build & Test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - name: Build & Test
-        run: echo "Repository initialized with 15m timeout and concurrency cancellation guardrails."
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run Go Tests
+        run: |
+          go test -v ./pkg/scaler/... ./pkg/prometheus/... ./pkg/spanner/... ./pkg/poller/...
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.6.0'
+
+      - name: Validate Terraform Format
+        run: |
+          cd terraform && terraform fmt -check -recursive
+
+      - name: Lint Helm Chart
+        run: |
+          helm lint helm/spanner-omni-autoscaler/

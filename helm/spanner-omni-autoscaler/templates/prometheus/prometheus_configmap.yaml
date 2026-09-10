@@ -1,0 +1,73 @@
+{{- if .Values.monitoring.prometheus.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-prometheus-server-conf
+  namespace: {{ .Values.monitoring.namespace | default .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: prometheus-server
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 10s
+      evaluation_interval: 10s
+    rule_files:
+      - "/etc/prometheus/rules/alert-rules.yml"
+    scrape_configs:
+      - job_name: 'spanner'
+        metrics_path: '/metrics'
+        scheme: http
+        http_sd_configs:
+          - url: "http://{{ .Values.spannerOmni.metricsTargetEndpoint | default "spanner.spanner-ns.svc.cluster.local:15012" }}/metrics/targets"
+            refresh_interval: 30s
+        metric_relabel_configs:
+          - regex: 'instance'
+            action: labeldrop
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+  alert-rules.yml: |
+    groups:
+      - name: spanner_omni_alerts
+        rules:
+          # TrueTime Alerts (Google Official: https://cloud.google.com/spanner-omni/prometheus-alerts)
+          - alert: TrueTimeUnavailable
+            expr: true_time_is_available < 1
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "TrueTime is unavailable on {{ $labels.spanner_server }}"
+              description: "TrueTime availability is degraded. Scaling operations must be frozen."
+
+          - alert: ClockSlaViolation
+            expr: sla_tester_violation_count > 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Clock SLA violation on {{ $labels.spanner_server }}"
+              description: "Clock synchronization SLA has been violated."
+
+          # Resource & Storage Alerts
+          - alert: SpannerHighCPUUtilization
+            expr: (sum(spanner_cpu_utilization_by_priority_and_category) * 100) / sum(spanner_available_milligcu) > 65
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High CPU utilization on Spanner Omni cluster"
+
+          - alert: SpannerStorageUtilizationWarning
+            expr: (sum(filesystem_size{type="used"}) / sum(filesystem_size{type="total"})) > 0.80
+            for: 5m
+            labels:
+              severity: warning
+
+          - alert: SpannerStorageUtilizationCritical
+            expr: (sum(filesystem_size{type="used"}) / sum(filesystem_size{type="total"})) > 0.90
+            for: 2m
+            labels:
+              severity: critical
+{{- end }}

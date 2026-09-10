@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autoscaler-config
+  namespace: spanner-autoscaler
+data:
+  autoscaler-config.yaml: |
+    ---
+    # Configuration adapted from Google Cloud Spanner Autoscaler on GKE
+    # Customized with Spanner Omni topologies and Prometheus telemetry
+    - namespace: spanner-ns
+      statefulSetName: spanner-a
+      units: NODES
+      minSize: 3
+      maxSize: 15
+      scalingMethod: LINEAR
+      rootServersPerZone: 3
+      safeScaleDown: true
+      deploymentEndpoint: "spanner-service:15000"
+      prometheusAddress: "http://prometheus-service.monitoring.svc.cluster.local:9090"
+      metrics:
+        - name: high_priority_cpu
+          regional_threshold: 65
+          regional_margin: 5
+        - name: storage_utilization
+          regional_threshold: 80
+          regional_margin: 5
+
+    - namespace: spanner-ns
+      statefulSetName: spanner-b
+      units: NODES
+      minSize: 3
+      maxSize: 15
+      scalingMethod: LINEAR
+      rootServersPerZone: 3
+      safeScaleDown: true
+      deploymentEndpoint: "spanner-service:15000"
+      prometheusAddress: "http://prometheus-service.monitoring.svc.cluster.local:9090"
+      metrics:
+        - name: high_priority_cpu
+          regional_threshold: 65
+          regional_margin: 5
